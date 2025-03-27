@@ -1,13 +1,15 @@
-from flask import current_app, request
+import random
+import datetime
+from flask import current_app, make_response
 from flask_restful import Resource, reqparse
-from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from flask_jwt_extended import create_access_token
 from models import db, User
 from extensions import bcrypt
 import resend
 
-# Helper function to create the serializer
-def get_serializer():
-    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+# Helper function to generate a 6-digit OTP
+def generate_otp():
+    return random.randint(100000, 999999)
 
 # Signup Resource
 class SignupResource(Resource):
@@ -28,57 +30,66 @@ class SignupResource(Resource):
             name=args['name'],
             email=args['email'],
             password=hashed_password,
-            is_verified=False
+            otp_code=generate_otp(),
+            otp_expires_at=datetime.datetime.utcnow() + datetime.timedelta(minutes=10),  # OTP valid for 10 minutes
+            is_verified=False  # mark as unverified until OTP is confirmed
         )
         db.session.add(new_user)
         db.session.commit()
 
-        # Generate a token that includes the user id
-        serializer = get_serializer()
-        verification_token = serializer.dumps({'user_id': str(new_user.id)})
-        # Build verification link (adjust the URL to your frontend/route)
-        verification_link = f"http://localhost:3000/verify-email?token={verification_token}"
-        verification_email_params = {
+        # Send OTP email using Resend
+        otp_email_params = {
             "from": "Gig App <onboarding@hello.fueldash.net>",
             "to": [args['email']],
             "subject": "Verify Your Email Address",
-            "html": f"<p>Please verify your email address by clicking the following link: "
-                    f"<a href='{verification_link}'>Verify Email</a>. "
-                    f"This link will expire in 15 minutes.</p>"
+            "html": f"<p>Your OTP code is <strong>{new_user.otp_code}</strong>. It expires in 10 minutes.</p>"
         }
         try:
-            resend.Emails.send(verification_email_params)
+            resend.Emails.send(otp_email_params)
         except Exception as e:
-            current_app.logger.error(f"Failed to send verification email: {str(e)}")
-            return {"message": "User created but failed to send verification email"}, 500
+            current_app.logger.error(f"Failed to send OTP email: {str(e)}")
+            return {"message": "User created but failed to send OTP email"}, 500
 
-        return {"message": "User created. Please check your email to verify your account.", "user_id": new_user.id}, 201
+        return {"message": "User created. Please verify your email using the OTP sent.", "user_id": new_user.id}, 201
 
-# Verification Resource
-class VerifyEmailResource(Resource):
-    def get(self):
-        token = request.args.get('token')
-        if not token:
-            return {"message": "Missing token"}, 400
+# New Resource to verify OTP
+class VerifyOTPResource(Resource):
+    def post(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('email', type=str, required=True, help="Email is required!")
+        parser.add_argument('otp', type=int, required=True, help="OTP code is required!")
+        args = parser.parse_args()
 
-        serializer = get_serializer()
-        try:
-            # The max_age is set to 900 seconds (15 minutes)
-            data = serializer.loads(token, max_age=900)
-        except SignatureExpired:
-            return {"message": "Token has expired. Please request a new verification email."}, 400
-        except BadSignature:
-            return {"message": "Invalid token. Verification failed."}, 400
-
-        user_id = data.get('user_id')
-        if not user_id:
-            return {"message": "Invalid token payload."}, 400
-
-        user = User.query.get(user_id)
+        user = User.query.filter_by(email=args['email']).first()
         if not user:
-            return {"message": "User not found."}, 404
+            return {"message": "User not found"}, 404
 
-        # Mark the user as verified
+        # Check if OTP has expired
+        if datetime.datetime.utcnow() > user.otp_expires_at:
+            return {"message": "OTP has expired"}, 400
+
+        # Check if OTP matches
+        if user.otp_code != str(args['otp']):
+            return {"message": "Invalid OTP code"}, 400
+
+        # Mark user as verified and clear OTP fields
         user.is_verified = True
+        user.otp_code = None
+        user.otp_expires_at = None
         db.session.commit()
-        return {"message": "Email successfully verified."}, 200
+
+        access_token = create_access_token(identity=str(user.id))
+        response = make_response({
+            "message": "Email verified successfully",
+            "access_token": access_token
+        }, 200)
+        expires = datetime.datetime.now() + datetime.timedelta(days=1)
+        response.set_cookie(
+            'access_token',
+            access_token,
+            httponly=True,
+            secure=True,
+            samesite='None',
+            expires=expires,
+        )
+        return response
