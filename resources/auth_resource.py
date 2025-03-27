@@ -1,10 +1,8 @@
-# resources.py (or wherever you keep your resource classes)
 from flask import current_app, request
 from flask_restful import Resource, reqparse
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from models import db, User
 from extensions import bcrypt
-import datetime
 import resend
 
 # Helper function to create the serializer
