@@ -35,6 +35,12 @@ class User(db.Model, SerializerMixin):
     is_verified = db.Column(db.Boolean, default=False, nullable=False)
     reset_token = db.Column(db.String(64), nullable=True)
     reset_expires_at = db.Column(db.DateTime, nullable=True)
+    auth_provider = db.Column(
+        db.String(50),
+        nullable=False,
+        server_default="email",
+        comment="Authentication provider; defaults to 'email' for email/password login"
+    )
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
 

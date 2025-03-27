@@ -1,18 +1,21 @@
+import os
 import random
 import datetime
-from flask import current_app, make_response
+from typing import Tuple, Optional
+from flask import current_app, make_response, url_for, redirect
 from flask_restful import Resource, reqparse
 from flask_jwt_extended import create_access_token
 from models import db, User
 from extensions import bcrypt
+from authlib.integrations.flask_client import OAuth
 import resend
 
-
+# Helper function to generate a 6-digit OTP
 def generate_otp() -> str:
     """Generate a 6-digit OTP as a string with leading zeros preserved"""
     return f"{random.randint(100000, 999999)}"
 
-
+# Signup Resource with OTP functionality
 class SignupResource(Resource):
     def post(self):
         parser = reqparse.RequestParser()
@@ -38,6 +41,7 @@ class SignupResource(Resource):
                 name=args['name'],
                 email=args['email'],
                 password=hashed_password,
+                auth_provider='email',
                 otp_code=generate_otp(),
                 otp_expires_at=datetime.datetime.utcnow() + datetime.timedelta(minutes=10),
                 is_verified=False
@@ -65,13 +69,13 @@ class SignupResource(Resource):
             current_app.logger.error(f"Signup error: {str(e)}")
             return {"message": "Registration failed"}, 500
 
-
+# Resource to verify OTP
 class VerifyOTPResource(Resource):
     def post(self):
         parser = reqparse.RequestParser()
         parser.add_argument('email', type=str, required=True,
                             help="Email is required!")
-        parser.add_argument('otp', type=str, required=True,  # Changed to string
+        parser.add_argument('otp', type=str, required=True,
                             help="OTP code is required!")
         args = parser.parse_args()
 
@@ -119,7 +123,7 @@ class VerifyOTPResource(Resource):
             current_app.logger.error(f"Verification error: {str(e)}")
             return {"message": "Verification failed"}, 500
 
-
+# Login Resource
 class LoginResource(Resource):
     def post(self):
         parser = reqparse.RequestParser()
@@ -165,3 +169,109 @@ class LoginResource(Resource):
         except Exception as e:
             current_app.logger.error(f"Login error: {str(e)}")
             return {"message": "Login failed"}, 500
+
+class GoogleOAuth:
+    def __init__(self, oauth: OAuth, frontend_url: str):
+        self.oauth = oauth
+        self.frontend_url = frontend_url
+        self.google = self._register_google()  # Store the Google client here
+
+    def _register_google(self):
+        """Register and return the Google OAuth client"""
+        return self.oauth.register(
+            name='google',
+            client_id=os.getenv('GOOGLE_CLIENT_ID'),  # Ensure correct env var name
+            client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+            server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+            client_kwargs={'scope': 'openid profile email'}
+        )
+
+class GoogleLogin(Resource):
+    def __init__(self, oauth: GoogleOAuth):
+        self.oauth = oauth
+
+    def get(self):
+        """Initiate Google OAuth flow"""
+        try:
+            redirect_uri = url_for('authorize_google', _external=True)
+            return self.oauth.google.authorize_redirect(redirect_uri)
+        except Exception as e:
+            current_app.logger.error(f"Google login initiation failed: {str(e)}")
+            return {"message": "Google login unavailable"}, 503
+
+
+class GoogleAuthorize(Resource):
+    def __init__(self, oauth: GoogleOAuth):
+        self.oauth = oauth
+        self.frontend_url = oauth.frontend_url
+
+    def get(self) -> redirect:
+        """Handle Google OAuth callback"""
+        try:
+            token = self.oauth.google.authorize_access_token()
+        except Exception as e:
+            current_app.logger.error(f"Error authorizing Google access token: {str(e)}")
+            return self._redirect_with_error("Failed to authorize access token")
+
+        # Corrected key to 'userinfo_endpoint' (was missing 'o')
+        userinfo_endpoint = self.oauth.google.server_metadata.get('userinfo_endpoint')
+        if not userinfo_endpoint:
+            current_app.logger.error("Userinfo endpoint not available in server metadata")
+            return self._redirect_with_error("Server configuration error")
+
+        try:
+            res = self.oauth.google.get(userinfo_endpoint)
+            res.raise_for_status()
+            user_info = res.json()
+        except Exception as e:
+            current_app.logger.error(f"Error fetching user info: {str(e)}")
+            return self._redirect_with_error("Failed to fetch user information")
+
+        if 'email' not in user_info:
+            current_app.logger.error("User info does not contain email")
+            return self._redirect_with_error("Email not provided by Google")
+
+        try:
+            user = self._get_or_create_user(user_info)
+        except Exception as e:
+            current_app.logger.error(f"Error creating user: {str(e)}")
+            return self._redirect_with_error("Account creation failed")
+
+        return self._create_authorized_response(user)
+
+    def _get_or_create_user(self, user_info: dict) -> User:
+        """Get or create user from Google profile"""
+        email = user_info['email']
+        user = User.query.filter_by(email=email).first()
+
+        if not user:
+            user = User(
+                name=user_info.get('name', 'Google User'),
+                email=email,
+                image=user_info.get('picture'),
+                auth_provider='google',
+                is_verified=True
+            )
+            db.session.add(user)
+            db.session.commit()
+
+        return user
+
+    def _create_authorized_response(self, user: User) -> redirect:
+        """Create final authorized response with JWT"""
+        access_token = create_access_token(identity=str(user.id))
+        response = redirect(f"{self.frontend_url}/onboarding")
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+            max_age=86400
+        )
+        return response
+
+    def _redirect_with_error(self, message: str) -> redirect:
+        """Redirect to frontend with error message"""
+        error_url = f"{self.frontend_url}/login?error={message}"
+        return redirect(error_url)
