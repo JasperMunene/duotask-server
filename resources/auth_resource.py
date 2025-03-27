@@ -37,7 +37,7 @@ class SignupResource(Resource):
         serializer = get_serializer()
         verification_token = serializer.dumps({'user_id': str(new_user.id)})
         # Build verification link (adjust the URL to your frontend/route)
-        verification_link = f"https://hama-nasi.vercel.app/verify-email?token={verification_token}"
+        verification_link = f"http://localhost:3000/verify-email?token={verification_token}"
         verification_email_params = {
             "from": "Gig App <onboarding@hello.fueldash.net>",
             "to": [args['email']],
