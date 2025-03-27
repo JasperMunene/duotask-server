@@ -10,6 +10,7 @@ from extensions import bcrypt
 from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth
+from resources.user_resource import Profile
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 
@@ -58,7 +59,7 @@ def create_app():
     api.add_resource(GoogleAuthorize, '/auth/authorize/google',
                      endpoint='authorize_google',
                      resource_class_args=[google_oauth])
-
+    api.add_resource(Profile, '/user/profile')
     return app
 
 
