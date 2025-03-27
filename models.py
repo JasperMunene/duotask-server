@@ -13,12 +13,10 @@ metadata = MetaData(naming_convention={
 
 db = SQLAlchemy(metadata=metadata)
 
-
 class User(db.Model, SerializerMixin):
     """User model representing application users."""
     __tablename__ = 'users'
 
-    # Define an index on otp_code and otp_expires_at via __table_args__
     __table_args__ = (
         Index('idx_verification', 'otp_code', 'otp_expires_at'),
     )
@@ -27,7 +25,7 @@ class User(db.Model, SerializerMixin):
     serialize_rules = ('-password', '-otp_code', '-reset_token', '-reset_expires_at')
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(150), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(150), nullable=False, index=True)
     email = db.Column(db.String(150), unique=True, nullable=False, index=True)
     password = db.Column(db.String(255), nullable=True)
     phone = db.Column(db.String(15), comment="Stored in E.164 format")
@@ -39,3 +37,29 @@ class User(db.Model, SerializerMixin):
     reset_expires_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
+
+
+class UserInfo(db.Model, SerializerMixin):
+    """User info model for additional user details."""
+    __tablename__ = 'user_info'
+
+    __table_args__ = (
+        Index('idx_user_info_user', 'user_id'),
+        Index('idx_user_info_rating', 'rating'),
+        Index('idx_user_info_completion', 'completion_rate'),
+    )
+
+    # Serialization rules to exclude sensitive information
+    serialize_rules = ('-user',)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    tagline = db.Column(db.String(255), nullable=True, comment="User's short description")
+    bio = db.Column(db.Text, nullable=True, comment="User's biography")
+    rating = db.Column(db.Float, default=0.0, nullable=False, comment="User's rating (0.0 - 5.0)")
+    completion_rate = db.Column(db.Float, default=0.0, nullable=False, comment="Task completion rate (0-100%)")
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
+
+    # Define relationship with User
+    user = db.relationship("User", backref=db.backref("user_info", uselist=False, cascade="all, delete-orphan"))

@@ -8,7 +8,7 @@ import os
 from models import db
 from extensions import bcrypt
 from flask_jwt_extended import JWTManager
-from resources.auth_resource import SignupResource, VerifyOTPResource, LoginUser
+from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource
 from datetime import timedelta
 
 
@@ -53,4 +53,4 @@ api.add_resource(HealthCheck, '/health')
 # Auth Resource
 api.add_resource(SignupResource, '/auth/signup')
 api.add_resource(VerifyOTPResource, '/auth/verify-otp')
-api.add_resource(LoginUser, '/auth/login')
+api.add_resource(LoginResource, '/auth/login')
