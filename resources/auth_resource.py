@@ -1,7 +1,9 @@
 from flask import current_app, request
+from flask import make_response
 from flask_restful import Resource, reqparse
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from models import db, User
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from extensions import bcrypt
 import resend
 
@@ -82,3 +84,48 @@ class VerifyEmailResource(Resource):
         user.is_verified = True
         db.session.commit()
         return {"message": "Email successfully verified."}, 200
+
+
+
+class LoginUser(Resource):
+    def post(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('email', type=str, required=True, help="Email cannot be blank!")
+        parser.add_argument('password', type=str, required=True, help="Password cannot be blank!")
+        args = parser.parse_args()
+        
+        user = User.query.filter_by(email=args['email']).first()
+
+        if not user:
+            return {"message": "No user found registered to that email"}, 404
+
+        # Verify password
+        if not bcrypt.check_password_hash(user.password, args['password']):
+            return {"message": "Invalid email or password!"}, 401
+
+        # Generate JWT token
+        access_token = create_access_token(identity=user.id)
+
+        # Create response with user data
+        response = make_response({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "image": user.image
+            }
+        }, 200)
+
+        # Set the access token as an HTTP-only cookie
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,  # Prevent JavaScript access
+            secure=True,    # Only send over HTTPS
+            samesite="Lax", # Helps prevent CSRF
+            max_age=86400   # Token expires in 1 day (24 hours)
+        )
+
+
+        return response
