@@ -127,5 +127,4 @@ class LoginUser(Resource):
             max_age=86400   # Token expires in 1 day (24 hours)
         )
 
-
         return response

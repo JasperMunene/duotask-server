@@ -37,3 +37,28 @@ class User(db.Model, SerializerMixin):
 
 
 Index('idx_verification', User.verification_token, User.verification_expires_at)
+
+class UserInfo(db.Model, SerializerMixin):
+    """User info model for additional user details."""
+    __tablename__ = 'user_info'
+
+    # Serialization rules to exclude sensitive information
+    serialize_rules = ('-user',)
+
+    id = db.Column(db.UUID, primary_key=True)
+    user_id = db.Column(db.UUID, db.ForeignKey('users.id', ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    tagline = db.Column(db.String(255), nullable=True, comment="User's short description")
+    bio = db.Column(db.Text, nullable=True, comment="User's biography")
+    rating = db.Column(db.Float, default=0.0, nullable=False, comment="User's rating (0.0 - 5.0)")
+    completion_rate = db.Column(db.Float, default=0.0, nullable=False, comment="Task completion rate (0-100%)")
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
+
+    # Define relationship
+    user = db.relationship("User", backref=db.backref("user_info", uselist=False, cascade="all, delete-orphan"))
+
+
+# Indexes for performance optimization
+Index('idx_user_info_user', UserInfo.user_id)
+Index('idx_user_info_rating', UserInfo.rating)
+Index('idx_user_info_completion', UserInfo.completion_rate)
