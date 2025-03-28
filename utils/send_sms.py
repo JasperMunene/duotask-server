@@ -17,8 +17,8 @@ class SendSms:
 
         # Prepare payload
         payload = {
-            'userid': 'mealscok',
-            'password': '-cCtu@NY39w5L8',
+            'userid': os.getenv("SMS_USER_ID"),
+            'password': os.getenv("SMS_PASSWORD"),
             'mobile': full_phone,
             'msg': self.message,
             'senderid': 'Intacom',
