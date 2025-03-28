@@ -10,7 +10,7 @@ from extensions import bcrypt
 from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
-from resources.user_resource import Profile
+from resources.user_resource import UserProfileResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 
@@ -62,7 +62,7 @@ def create_app():
     api.add_resource(ResendOTPResource, '/auth/resend-otp')
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
-    api.add_resource(Profile, '/user/profile')
+    api.add_resource(UserProfileResource, '/user/profile')
     return app
 
 class HealthCheck(Resource):
