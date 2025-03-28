@@ -1,13 +1,13 @@
-from flask import request
-from flask_restful import Resource
-import urllib.parse
 import requests
 
-class SendSms(Resource):
+class SendSms:
+    def __init__(self, phone, message):
+        self.phone = phone
+        self.message = message
+        
     def post(self):
-        data = request.get_json()
-        message = data.get('message')
-        phone = data.get('phone')
+        message = self.message
+        phone = self.phone
         # Remove leading zero from phone number
         formatted_phone = phone.lstrip('0')
         
