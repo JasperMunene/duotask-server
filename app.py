@@ -63,7 +63,6 @@ def create_app():
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
     api.add_resource(Profile, '/user/profile')
-    return app
 
 
 class HealthCheck(Resource):
