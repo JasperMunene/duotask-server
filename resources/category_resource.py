@@ -2,22 +2,7 @@ from flask_restful import Resource
 from flask import request, jsonify
 from models import db, Categories  # Import your model correctly
 
-class CategoryResource(Resource):  # Renamed to avoid conflict
-    def post(self):
-        data = request.get_json()
-        if not data or "name" not in data:
-            return {"message": "Name is required"}, 400  # Handle missing fields
-
-        # Create new category
-        new_category = Categories(name=data["name"])
-        db.session.add(new_category)  
-        db.session.commit()  # Fix: Corrected commit call
-        
-        return {
-            "message": "Category added successfully", 
-            "category": new_category.to_dict()
-        }, 201  # Return 201 for resource creation
-    
+class CategoryResource(Resource):
     def get(self):
         page = request.args.get('page', 1, type=int)  # Get page number, default is 1
         per_page = request.args.get('per_page', 10, type=int)  # Items per page, default is 10

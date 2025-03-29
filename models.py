@@ -81,7 +81,6 @@ class Categories(db.Model, SerializerMixin):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False, unique=True, index=True, comment="Name of the category")
-    tasks_count = db.Column(db.Integer, default=0, nullable=False, comment="Optional counter for the number of tasks in this category")
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now(), nullable=False)
 
