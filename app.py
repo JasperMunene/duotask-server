@@ -11,6 +11,7 @@ from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
 from resources.user_resource import UserProfileResource
+from resources.category_resource import CategoryResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 
@@ -63,6 +64,7 @@ def create_app():
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
     api.add_resource(UserProfileResource, '/user/profile')
+    api.add_resource(CategoryResource, '/categories')
     return app
 
 class HealthCheck(Resource):
