@@ -53,8 +53,6 @@ class UserInfo(db.Model, SerializerMixin):
     __tablename__ = 'user_info'
     __table_args__ = (
         Index('idx_user_info_user', 'user_id'),
-        Index('idx_user_info_rating', 'rating'),
-        Index('idx_user_info_completion', 'completion_rate'),
     )
 
     serialize_rules = ('-user',)
@@ -63,8 +61,6 @@ class UserInfo(db.Model, SerializerMixin):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), unique=True, nullable=False, index=True)
     tagline = db.Column(db.String(255), nullable=True, comment="User's short description")
     bio = db.Column(db.Text, nullable=True, comment="User's biography")
-    rating = db.Column(db.Float, default=0.0, nullable=False, comment="User's rating (0.0 - 5.0)")
-    completion_rate = db.Column(db.Float, default=0.0, nullable=False, comment="Task completion rate (0-100%)")
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
 
