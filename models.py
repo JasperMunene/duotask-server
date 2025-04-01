@@ -150,7 +150,7 @@ class TaskAssignment(db.Model, SerializerMixin):
     task_giver = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False, comment="User who posted the task")
     task_doer = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False, comment="User assigned to perform the task")
     agreed_price = db.Column(db.Numeric(10, 2), nullable=False)
-    conversation_id = db.Column(db.Integer, nullable=True, comment="Optional reference to a conversation for messaging")
+    bid_id = db.Column(db.Integer, db.ForeignKey('bids.id'), nullable=False)
     status = db.Column(db.String(20), nullable=False, comment="Assignment status: e.g., 'assigned', 'in_progress', 'completed', 'cancelled'")
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
@@ -159,3 +159,17 @@ class TaskAssignment(db.Model, SerializerMixin):
     task = db.relationship("Task", backref=db.backref("assignments", cascade="all, delete-orphan", lazy=True))
     giver = db.relationship("User", foreign_keys=[task_giver], backref=db.backref("given_assignments", cascade="all, delete-orphan", lazy=True))
     doer = db.relationship("User", foreign_keys=[task_doer], backref=db.backref("assignments", cascade="all, delete-orphan", lazy=True))
+    bid = db.relationship("Bid", backref=db.backref("assignment", uselist=False))
+
+# ---------------------------------------------------------------------------
+# 6. Notifications
+# ---------------------------------------------------------------------------
+class Notification(db.Model, SerializerMixin):
+    __tablename__ = 'notifications'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+
+    user = db.relationship("User", backref="notifications")
