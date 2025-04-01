@@ -3,7 +3,7 @@ from flask_restful import Api, Resource
 from flask_migrate import Migrate
 from dotenv import load_dotenv
 from flask_cors import CORS
-import resend
+import redis
 import os
 from models import db
 from extensions import bcrypt
@@ -36,6 +36,15 @@ def create_app():
     db.init_app(app)
     jwt = JWTManager(app)
 
+    # Set up Redis (make it available as app.redis)
+    r = redis.Redis(
+        host=os.getenv('REDIS_ENDPOINT'),
+        port=os.getenv('REDIS_PORT'),
+        password=os.getenv('REDIS_PASSWORD'),
+        ssl=True
+    )
+    app.redis = r
+
     CORS(app,
          resources={r"/auth/*": {"origins": app.config['FRONTEND_URL']}},
          supports_credentials=True,
@@ -51,6 +60,11 @@ def create_app():
 
     # Setup API resources
     api = Api(app)
+
+    class HealthCheck(Resource):
+        def get(self):
+            return {"status": "healthy"}, 200
+
     api.add_resource(HealthCheck, '/health')
     api.add_resource(SignupResource, '/auth/signup')
     api.add_resource(VerifyOTPResource, '/auth/verify-otp')
@@ -63,11 +77,8 @@ def create_app():
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
     api.add_resource(UserProfileResource, '/user/profile')
-    return app
 
-class HealthCheck(Resource):
-    def get(self):
-        return {"status": "healthy"}, 200
+    return app
 
 
 if __name__ == '__main__':
