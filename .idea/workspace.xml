@@ -5,12 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f5cf8742-d2bf-481c-b10d-96ae5fada099" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/models/category.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/resources/task_resource.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/migrations/versions/086eed16acf4_initial_migration.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/migrations/versions/1d432690b0c9_add_bid_relationship_to_task_assignment_.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/migrations/versions/6550a821b77f_add_bid_relationship_to_task_assignment_.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/migrations/versions/b1058ed0ec77_remove_completion_rate_and_reviews_.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/models/task.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/task.py" afterDir="false" />
     </list>

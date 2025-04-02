@@ -26,7 +26,7 @@ class Task(db.Model, SerializerMixin):
     specific_date = db.Column(db.DateTime, nullable=True, comment="Exact date if schedule_type is 'specific_day'")
     deadline_date = db.Column(db.DateTime, nullable=True, comment="Deadline date if schedule_type is 'before_day'")
     preferred_time = db.Column(db.Time, nullable=True, comment="Preferred time if schedule_type is 'flexible'")
-    status = db.Column(db.String(20), nullable=False, comment="Task status: e.g., 'open', 'in_progress', 'completed', 'cancelled'")
+    status = db.Column(db.String(20), nullable=False, comment="Task status: e.g., 'open', 'in_progress', 'completed', 'cancelled'", server_default="open")
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
 
@@ -34,3 +34,4 @@ class Task(db.Model, SerializerMixin):
     user = db.relationship("User", backref=db.backref("tasks", cascade="all, delete-orphan", lazy=True))
     location = db.relationship("TaskLocation", backref=db.backref("tasks", cascade="all, delete-orphan", lazy=True))
     categories = db.relationship('Category', secondary=task_categories, backref='tasks')
+    images = db.relationship("TaskImage", backref=db.backref("task", cascade="all, delete-orphan", lazy=True))
