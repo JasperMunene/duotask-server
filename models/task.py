@@ -34,4 +34,5 @@ class Task(db.Model, SerializerMixin):
     user = db.relationship("User", backref=db.backref("tasks", cascade="all, delete-orphan", lazy=True))
     location = db.relationship("TaskLocation", backref=db.backref("tasks", cascade="all, delete-orphan", lazy=True))
     categories = db.relationship('Category', secondary=task_categories, backref='tasks')
-    images = db.relationship("TaskImage", backref=db.backref("task", cascade="all, delete-orphan", lazy=True))
+    images = db.relationship("TaskImage", backref=db.backref("task", lazy=True), cascade="all, delete-orphan", single_parent=True)
+
