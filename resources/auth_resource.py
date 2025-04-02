@@ -5,7 +5,8 @@ import uuid
 from flask import current_app, make_response, url_for, redirect
 from flask_restful import Resource, reqparse
 from flask_jwt_extended import create_access_token
-from models import db, User
+from models import db
+from models.user import User
 from extensions import bcrypt
 from authlib.integrations.flask_client import OAuth
 import resend
