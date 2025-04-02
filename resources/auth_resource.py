@@ -54,7 +54,7 @@ class SignupResource(Resource):
 
             # Send OTP email
             otp_email_params = {
-                "from": "Gig App <onboarding@hello.fueldash.net>",
+                "from": "Grnder <onboarding@grnder.fueldash.net>",
                 "to": [args['email']],
                 "subject": "Verify Your Email Address",
                 "html": f"""<p>Your verification code is <strong>{new_user.otp_code}</strong>. 
@@ -348,7 +348,7 @@ class ResendOTPResource(Resource):
         """Send OTP email using Resend service"""
         try:
             resend.Emails.send({
-                "from": "Gig App <onboarding@hello.fueldash.net>",
+                "from": "Grnder <onboarding@grnder.fueldash.net>",
                 "to": [email],
                 "subject": "Your Verification Code",
                 "html": f"""
@@ -419,7 +419,7 @@ class ForgotPasswordResource(Resource):
 
         try:
             resend.Emails.send({
-                "from": "Gig App <onboarding@hello.fueldash.net>",
+                "from": "Grnder <onboarding@grnder.fueldash.net>",
                 "to": [email],
                 "subject": "Password Reset Request",
                 "html": f"""
