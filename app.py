@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_restful import Api, Resource
 from flask_migrate import Migrate
+from flask_caching import Cache
 from dotenv import load_dotenv
 from flask_cors import CORS
 import redis
@@ -28,7 +29,12 @@ def create_app():
         JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY", "your_jwt_secret_key"),
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=24),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        FRONTEND_URL=os.getenv("FRONTEND_URL", "http://localhost:3000")
+        FRONTEND_URL=os.getenv("FRONTEND_URL", "http://localhost:3000"),
+
+        # Improved Redis configuration
+        CACHE_TYPE="RedisCache",
+        CACHE_REDIS_URL=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        CACHE_DEFAULT_TIMEOUT=300  # 5 minutes
     )
 
     # Initialize extensions
@@ -36,14 +42,15 @@ def create_app():
     db.init_app(app)
     jwt = JWTManager(app)
 
-    # Set up Redis (make it available as app.redis)
-    r = redis.Redis(
-        host=os.getenv('REDIS_ENDPOINT'),
-        port=os.getenv('REDIS_PORT'),
-        password=os.getenv('REDIS_PASSWORD'),
-        ssl=True
+    # Configure Flask-Caching with Redis
+    cache = Cache(app)
+
+    # Configure direct Redis connection
+    app.redis = redis.Redis.from_url(
+        app.config["CACHE_REDIS_URL"],
+        ssl_cert_reqs=None,  # Adjust based on your SSL requirements
+        decode_responses=True
     )
-    app.redis = r
 
     CORS(app,
          resources={r"/auth/*": {"origins": app.config['FRONTEND_URL']}},
@@ -63,7 +70,12 @@ def create_app():
 
     class HealthCheck(Resource):
         def get(self):
-            return {"status": "healthy"}, 200
+            # Add Redis health check
+            try:
+                app.redis.ping()
+                return {"status": "healthy", "redis": "connected"}, 200
+            except redis.ConnectionError:
+                return {"status": "healthy", "redis": "disconnected"}, 200
 
     api.add_resource(HealthCheck, '/health')
     api.add_resource(SignupResource, '/auth/signup')
