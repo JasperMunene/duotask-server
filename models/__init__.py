@@ -14,3 +14,10 @@ db = SQLAlchemy(metadata=metadata)
 
 # Import models so they are registered with SQLAlchemy
 from models.user import User
+from models.user_info import UserInfo
+from models.category import Category
+from models.task_location import TaskLocation
+from models.task import Task
+from models.task_assignment import TaskAssignment
+from models.bid import Bid
+from models.notification import Notification

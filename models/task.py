@@ -1,6 +1,12 @@
 from . import db
 from sqlalchemy_serializer import SerializerMixin
 
+# Association table for the many-to-many relationship between tasks and categories
+task_categories = db.Table(
+    'task_categories',
+    db.Column('task_id', db.Integer, db.ForeignKey('tasks.id', ondelete="CASCADE"), primary_key=True),
+    db.Column('category_id', db.Integer, db.ForeignKey('categories.id', ondelete="CASCADE"), primary_key=True)
+)
 
 # ---------------------------------------------------------------------------
 # Tasks
@@ -21,11 +27,10 @@ class Task(db.Model, SerializerMixin):
     deadline_date = db.Column(db.DateTime, nullable=True, comment="Deadline date if schedule_type is 'before_day'")
     preferred_time = db.Column(db.Time, nullable=True, comment="Preferred time if schedule_type is 'flexible'")
     status = db.Column(db.String(20), nullable=False, comment="Task status: e.g., 'open', 'in_progress', 'completed', 'cancelled'")
-    category = db.Column(db.String(255), nullable = True, comment="Categorises each task to specific tags")
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
 
     # Relationships
     user = db.relationship("User", backref=db.backref("tasks", cascade="all, delete-orphan", lazy=True))
     location = db.relationship("TaskLocation", backref=db.backref("tasks", cascade="all, delete-orphan", lazy=True))
-
+    categories = db.relationship('Category', secondary=task_categories, backref='tasks')
