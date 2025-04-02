@@ -11,12 +11,11 @@ from extensions import bcrypt
 from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
-from resources.user_resource import UserProfileResource
+from resources.user_resource import UserProfileResource, UserHealthResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 
 load_dotenv()
-
 
 def create_app():
     app = Flask(__name__)
@@ -30,11 +29,10 @@ def create_app():
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=24),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         FRONTEND_URL=os.getenv("FRONTEND_URL", "http://localhost:3000"),
-
-        # Improved Redis configuration
         CACHE_TYPE="RedisCache",
         CACHE_REDIS_URL=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
-        CACHE_DEFAULT_TIMEOUT=300  # 5 minutes
+        CACHE_DEFAULT_TIMEOUT=300,
+        PROFILE_CACHE_TTL=300
     )
 
     # Initialize extensions
@@ -42,13 +40,14 @@ def create_app():
     db.init_app(app)
     jwt = JWTManager(app)
 
-    # Configure Flask-Caching with Redis
+    # Configure Flask-Caching
     cache = Cache(app)
+    app.cache = cache  # Explicitly register cache with app
 
     # Configure direct Redis connection
     app.redis = redis.Redis.from_url(
         app.config["CACHE_REDIS_URL"],
-        ssl_cert_reqs=None,  # Adjust based on your SSL requirements
+        ssl_cert_reqs=None,
         decode_responses=True
     )
 
@@ -70,7 +69,6 @@ def create_app():
 
     class HealthCheck(Resource):
         def get(self):
-            # Add Redis health check
             try:
                 app.redis.ping()
                 return {"status": "healthy", "redis": "connected"}, 200
@@ -78,6 +76,8 @@ def create_app():
                 return {"status": "healthy", "redis": "disconnected"}, 200
 
     api.add_resource(HealthCheck, '/health')
+    api.add_resource(UserHealthResource, '/health/user')
+
     api.add_resource(SignupResource, '/auth/signup')
     api.add_resource(VerifyOTPResource, '/auth/verify-otp')
     api.add_resource(LoginResource, '/auth/login')
@@ -91,7 +91,6 @@ def create_app():
     api.add_resource(UserProfileResource, '/user/profile')
 
     return app
-
 
 if __name__ == '__main__':
     app = create_app()

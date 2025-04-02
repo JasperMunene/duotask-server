@@ -148,7 +148,7 @@ class LoginResource(Resource):
             return {"message": "Account not verified"}, 403
 
         try:
-            access_token = create_access_token(identity=user.id)
+            access_token = create_access_token(identity=str(user.id))
             response = make_response({
                 "message": "Login successful",
                 "user": {
