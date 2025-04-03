@@ -39,6 +39,6 @@ class User(db.Model, SerializerMixin):
     # Relationships
     conversations_as_giver = db.relationship('Conversation', foreign_keys='Conversation.task_giver', backref='task_giver_user')
     conversations_as_doer = db.relationship('Conversation', foreign_keys='Conversation.task_doer', backref='task_doer_user')
-    messages_as_giver = db.relationship('Message', foreign_keys='Message.task_giver', backref='task_giver_user')
-    messages_as_doer = db.relationship('Message', foreign_keys='Message.task_doer', backref='task_doer_user')
+    messages_as_sender = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender_user')
+    messages_as_reciever = db.relationship('Message', foreign_keys='Message.reciever_id', backref='reciever_user')
     
