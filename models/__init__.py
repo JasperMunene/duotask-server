@@ -23,3 +23,5 @@ from models.bid import Bid
 from models.notification import Notification
 from models.task_image import TaskImage
 from models.review import Review
+from models.conversation import Conversation
+from models.message import Message

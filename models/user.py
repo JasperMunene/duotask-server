@@ -35,3 +35,10 @@ class User(db.Model, SerializerMixin):
     )
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
+
+    # Relationships
+    conversations_as_giver = db.relationship('Conversation', foreign_keys='Conversation.task_giver', backref='task_giver_user')
+    conversations_as_doer = db.relationship('Conversation', foreign_keys='Conversation.task_doer', backref='task_doer_user')
+    messages_as_giver = db.relationship('Message', foreign_keys='Message.task_giver', backref='task_giver_user')
+    messages_as_doer = db.relationship('Message', foreign_keys='Message.task_doer', backref='task_doer_user')
+    

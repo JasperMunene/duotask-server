@@ -52,11 +52,12 @@ def create_app():
         decode_responses=True
     )
 
-    CORS(app,
-         resources={r"/auth/*": {"origins": app.config['FRONTEND_URL']}},
-         supports_credentials=True,
-         allow_headers=["Content-Type", "Authorization"],
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    CORS(app
+        #  ,
+        #  resources={r"/auth/*": {"origins": app.config['FRONTEND_URL']}},
+        #  supports_credentials=True,
+        #  allow_headers=["Content-Type", "Authorization"],
+        #  methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
          )
 
     migrate = Migrate(app, db)
