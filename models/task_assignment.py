@@ -1,7 +1,6 @@
 from . import db
 from sqlalchemy_serializer import SerializerMixin
 
-
 # ---------------------------------------------------------------------------
 #  Task Assignments
 # ---------------------------------------------------------------------------
@@ -22,5 +21,5 @@ class TaskAssignment(db.Model, SerializerMixin):
     # Relationships
     task = db.relationship("Task", backref=db.backref("assignments", cascade="all, delete-orphan", lazy=True))
     giver = db.relationship("User", foreign_keys=[task_giver], backref=db.backref("given_assignments", cascade="all, delete-orphan", lazy=True))
-    doer = db.relationship("User", foreign_keys=[task_doer], backref=db.backref("assignments", cascade="all, delete-orphan", lazy=True))
+    doer = db.relationship("User", foreign_keys=[task_doer], backref=db.backref("assignments_received", cascade="all, delete-orphan", lazy=True))
     bid = db.relationship("Bid", backref=db.backref("assignment", uselist=False))
