@@ -1,23 +1,34 @@
-from flask_socketio import socketio
-from flask import current_app, jsonify, request
-from flask_restful import Resource, reqparse
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from models.user import User
+from flask import request
+from flask_restful import Resource
+from extensions import socketio  # ✅ Import socketio from extensions.py
+from models.user import User  
 
-
-class Connection(Resource):
-    # @jwt_required()
+class UserConnection(Resource):
     def post(self):
         data = request.get_json()
         user_id = data.get('user_id')
-        
-        if not user_id :
-            return {"message":  "no user_id passed for the session"}, 401
-        
+
+        if not user_id:
+            return {"message": "No user_id provided"}, 400
+
         user = User.query.filter_by(id=user_id).first()
-        
-        if user:
-            socketio.emit('connect_user', {'user_id': user_id})
-            return {"message": "Connected successfully"}, 200
-        else:
-            return {"message": "Invalid user_id, connection failed"}, 400
+        if not user:
+            return {"message": "Invalid user_id"}, 404
+
+        socketio.emit('user_connected', {'user_id': user_id})
+        return {"message": "User connected successfully"}, 200
+
+class UserDisconnection(Resource):
+    def post(self):
+        data = request.get_json()
+        user_id = data.get('user_id')
+
+        if not user_id:
+            return {"message": "No user_id provided"}, 400
+
+        user = User.query.filter_by(id=user_id).first()
+        if not user:
+            return {"message": "Invalid user_id"}, 404
+
+        socketio.emit('user_disconnected', {'user_id': user_id})
+        return {"message": "User disconnected successfully"}, 200

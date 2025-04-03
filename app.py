@@ -7,18 +7,17 @@ from flask_cors import CORS
 import redis
 import os
 from models import db
-from extensions import bcrypt
+from extensions import bcrypt, socketio
 from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource
 from resources.task_resource import TaskResource, SingleTaskResource
 from resources.conversation_resource import ConversationResource
-from resources.connection_resource import Connection
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
-
+from resources.connection_resource import UserConnection, UserDisconnection
 load_dotenv()
 
 def create_app():
@@ -43,7 +42,7 @@ def create_app():
     bcrypt.init_app(app)
     db.init_app(app)
     jwt = JWTManager(app)
-    socketio = SocketIO(app)
+    socketio.init_app(app)  # Attach socketio to the Flask app
     # Configure Flask-Caching
     cache = Cache(app)
     app.cache = cache  # Explicitly register cache with app
@@ -103,11 +102,13 @@ def create_app():
 
 # conversatoin Resource
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
-    
-# websocket user_connection
-    api.add_resource(Connection, '/user/connect')
-    
+
+# user connection
+    api.add_resource(UserConnection, '/user/connect')
+    api.add_resource(UserDisconnection, '/user/disconnect')
     return app
+
+
 if __name__ == '__main__':
     app = create_app()
-    app.run()
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
