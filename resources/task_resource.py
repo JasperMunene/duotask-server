@@ -162,7 +162,7 @@ class TaskResource(Resource):
         serialized['categories'] = [c.to_dict() for c in task.categories]
         serialized['user'] = {
             'name': task.user.name,
-            'rating': task.user.user_info.rating if task.user.user_info else 0.0
+            # 'rating': task.user.user_info.rating if task.user.user_info else 0.0
         }
 
         # Add distance calculation if coordinates provided
