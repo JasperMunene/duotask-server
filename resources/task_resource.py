@@ -1,7 +1,8 @@
 # task_resource.py
-from flask_restful import Resource, reqparse
-from flask_jwt_extended import jwt_required
+from flask_restful import Resource, reqparse, abort
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
+from flask_limiter import Limiter  # Ensure you have a global limiter instance attached to your app
 from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
 from models.task import Task
@@ -9,8 +10,8 @@ from models.task_location import TaskLocation
 from models.category import Category
 from models.user import User
 from models.user_info import UserInfo
+from datetime import datetime
 import math
-
 
 # Haversine formula for distance calculation
 def haversine(lat1, lon1, lat2, lon2):
@@ -174,7 +175,7 @@ class TaskResource(Resource):
             'rating': avg_rating
         }
 
-        # Add preferred time range
+        # Add preferred time range with start and end times
         serialized['preferred_time'] = {
             'start': str(task.preferred_start_time) if task.preferred_start_time else None,
             'end': str(task.preferred_end_time) if task.preferred_end_time else None,
@@ -189,3 +190,97 @@ class TaskResource(Resource):
             )
 
         return serialized
+
+
+# Single Task Resource with rate limiting
+class SingleTaskResource(Resource):
+    @jwt_required()
+    def get(self, task_id):
+        """
+        Get single task details.
+        ---
+        parameters:
+          - name: task_id
+            in: path
+            type: integer
+            required: true
+        responses:
+          200:
+            description: Task details
+          404:
+            description: Task not found
+        """
+        # Validate task ID
+        if not isinstance(task_id, int) or task_id < 1:
+            abort(400, message="Invalid task ID format")
+
+        cache = current_app.cache
+        cache_key = f"task_{task_id}"
+
+        # Try cached response
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return cached_data
+
+        # Eager load all relationships in a single query
+        task = Task.query.options(
+            joinedload(Task.location),
+            joinedload(Task.categories),
+            joinedload(Task.images),
+            joinedload(Task.user).joinedload(User.user_info)
+        ).get(task_id)
+
+        if not task or task.status == 'deleted':
+            abort(404, message="Task not found")
+
+        serialized = self._serialize_task(task)
+
+        # Cache response for 5 minutes
+        cache.set(cache_key, serialized, timeout=300)
+
+        return serialized
+
+    def _serialize_task(self, task):
+        # Calculate average rating from reviews_received
+        user_reviews = task.user.reviews_received if task.user else []
+        avg_rating = (sum(review.rating for review in user_reviews) / len(user_reviews)
+                      if user_reviews else 0.0)
+
+        response = {
+            "task": task.to_dict(rules=(
+                '-user.tasks',
+                '-location.tasks',
+                '-categories.tasks',
+                '-images.task'
+            )),
+            "location": task.location.to_dict() if task.location else None,
+            "categories": [c.to_dict() for c in task.categories],
+            "images": [img.to_dict() for img in task.images],
+            "user": {
+                "id": task.user.id,
+                "name": task.user.name,
+                "rating": avg_rating,
+                "completed_tasks": getattr(task.user, "completed_tasks_count", 0),
+                "avatar": task.user.image
+            },
+            "metadata": {
+                "views": self._get_task_views(task.id),
+                "popularity_score": self._calculate_popularity(task)
+            }
+        }
+
+        # If a distance attribute is present, include it
+        if hasattr(task, 'distance'):
+            response["distance"] = task.distance
+
+        return response
+
+    def _get_task_views(self, task_id):
+        # Implement view tracking logic (e.g., using Redis)
+        return current_app.redis.get(f"task_views_{task_id}") or 0
+
+    def _calculate_popularity(self, task):
+        # Example popularity algorithm (adjust weights as needed)
+        base_score = getattr(task, "bids_count", 0) * 0.5
+        time_score = 1 / (1 + (datetime.now() - task.created_at).days)
+        return round(base_score + time_score, 2)

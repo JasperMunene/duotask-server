@@ -12,7 +12,7 @@ from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource
-from resources.task_resource import TaskResource
+from resources.task_resource import TaskResource, SingleTaskResource
 from resources.conversation_resource import ConversationResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
@@ -97,6 +97,7 @@ def create_app():
 
 #Task Resource
     api.add_resource(TaskResource, '/tasks')
+    api.add_resource(SingleTaskResource, '/tasks/<int:task_id>')
 
 # conversatoin Resource
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
