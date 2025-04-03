@@ -15,6 +15,8 @@ class Task(db.Model, SerializerMixin):
     """Task model representing a task posted on the platform."""
     __tablename__ = 'tasks'
 
+    serialize_rules = ('-user.tasks', '-location.tasks', '-categories.tasks', '-images.task')
+
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False, comment="Task creator")
     title = db.Column(db.String(255), nullable=False)

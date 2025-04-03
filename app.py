@@ -12,6 +12,7 @@ from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource
+from resources.task_resource import TaskResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 
@@ -75,9 +76,11 @@ def create_app():
             except redis.ConnectionError:
                 return {"status": "healthy", "redis": "disconnected"}, 200
 
+#Health Resource
     api.add_resource(HealthCheck, '/health')
     api.add_resource(UserHealthResource, '/health/user')
 
+#Auth Resource
     api.add_resource(SignupResource, '/auth/signup')
     api.add_resource(VerifyOTPResource, '/auth/verify-otp')
     api.add_resource(LoginResource, '/auth/login')
@@ -89,6 +92,9 @@ def create_app():
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
     api.add_resource(UserProfileResource, '/user/profile')
+
+#Task Resource
+    api.add_resource(TaskResource, '/tasks')
 
     return app
 
