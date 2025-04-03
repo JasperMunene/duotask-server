@@ -160,9 +160,18 @@ class TaskResource(Resource):
         serialized = task.to_dict()
         serialized['location'] = task.location.to_dict() if task.location else None
         serialized['categories'] = [c.to_dict() for c in task.categories]
+
+        # Aggregate ratings from reviews_received (assuming the User model has a 'reviews_received' relationship)
+        user = task.user
+        user_reviews = getattr(user, 'reviews_received', [])
+        if user_reviews:
+            avg_rating = sum(review.rating for review in user_reviews) / len(user_reviews)
+        else:
+            avg_rating = 0.0
+
         serialized['user'] = {
-            'name': task.user.name,
-            # 'rating': task.user.user_info.rating if task.user.user_info else 0.0
+            'name': user.name,
+            'rating': avg_rating
         }
 
         # Add distance calculation if coordinates provided
