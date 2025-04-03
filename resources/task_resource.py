@@ -174,6 +174,12 @@ class TaskResource(Resource):
             'rating': avg_rating
         }
 
+        # Add preferred time range
+        serialized['preferred_time'] = {
+            'start': str(task.preferred_start_time) if task.preferred_start_time else None,
+            'end': str(task.preferred_end_time) if task.preferred_end_time else None,
+        }
+
         # Add distance calculation if coordinates provided
         if args['lat'] and args['lon'] and task.location:
             serialized['distance'] = haversine(
