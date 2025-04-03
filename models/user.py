@@ -36,7 +36,17 @@ class User(db.Model, SerializerMixin):
     )
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
+    status = db.Column(db.String(10), default="offline")  # 'online' or 'offline'
+    last_seen = db.Column(db.DateTime, default=db.func.now())  # Last seen time
 
+    def update_status(self, new_status):
+        """Update user status and last seen time."""
+        self.status = new_status
+        if new_status == "offline":
+            self.last_seen = db.func.now()
+        db.session.commit()
+    
+    
     # Relationships (not automatically serialized)
     conversations_as_giver = db.relationship('Conversation', foreign_keys='Conversation.task_giver', backref='task_giver_user')
     conversations_as_doer = db.relationship('Conversation', foreign_keys='Conversation.task_doer', backref='task_doer_user')

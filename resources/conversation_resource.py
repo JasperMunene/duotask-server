@@ -48,36 +48,63 @@ class ConversationResource(Resource):
 
         result = []
         for convo in conversations:
-            # Check who the recipient is based on the user_id
-            if convo.task_giver == user_id:
-                recipient_user_id = convo.task_doer
-            else:
-                recipient_user_id = convo.task_giver
-
-            # Get the user data of the recipient
+            # Determine the recipient user
+            recipient_user_id = convo.task_doer if convo.task_giver == user_id else convo.task_giver
             recipient = User.query.get(recipient_user_id)
 
             # Get the last message in the conversation
-            last_msg = Message.query.filter_by(conversation_id=convo.id).order_by(Message.date_time.desc()).first()
-            last_msg_id = last_msg.id if last_msg else None
-            last_message = last_msg.message if last_msg else None
+            last_msg = (
+                Message.query
+                .filter_by(conversation_id=convo.id)
+                .order_by(Message.date_time.desc())
+                .first()
+            )
+
+            # Get the last 5 messages
+            last_10_msgs = (
+                Message.query
+                .filter_by(conversation_id=convo.id)
+                .order_by(Message.date_time.desc())
+                .limit(10)
+                .all()
+            )
+
+            # Format messages
+            messages = [
+                {
+                    "message_id": msg.id,
+                    "sender_id": msg.sender_id,
+                    "receiver_id": msg.reciever_id,
+                    "text": msg.message,
+                    "time": msg.date_time.isoformat(),
+                    "status": msg.status,
+                    "sent": msg.sender_id == user_id  # True if sender_id matches user_id, else False
+                }
+                for msg in last_10_msgs
+            ]
+
 
             # If the passed user_id sent the last message, prepend "You: "
-            if last_msg and ((last_msg.sender_id == user_id)):
-                last_message = f"You: {last_message}"
-
+            last_message = f"You: {last_msg.message}" if last_msg and last_msg.sender_id == user_id else last_msg.message if last_msg else None
+            
+            unread = False if last_msg and last_msg.reciever_id and last_msg.status == "read" else True 
+            
             result.append({
-                "conversation_id": convo.id,
+                "id": convo.id,
                 "task_giver": convo.task_giver,
                 "task_doer": convo.task_doer,
                 "recipient": {
                     "user_id": recipient.id,
                     "name": recipient.name,
-                    "profile_image": recipient.image  # Assuming profile image URL is stored in 'image'
+                    "avator": recipient.image  # Assuming profile image URL is stored in 'image'
                 },
-                "last_msg_id": last_msg_id,
-                "last_message": last_message
+                "messages": messages,
+                "last_msg_id": last_msg.id if last_msg else None,
+                "lastMessage": last_message,
+                "time": last_msg.date_time.isoformat(),
+                "unread": unread
             })
+
         try:
             return result
         except TypeError as e:
