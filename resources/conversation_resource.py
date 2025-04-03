@@ -27,8 +27,8 @@ class ConversationResource(Resource):
         # Create the default message for task_doer
         message = Message(
             conversation=conversation,
-            task_giver=task_giver_id,
-            task_doer=task_doer_id,
+            sender_id=task_giver_id,
+            reciever_id=task_doer_id,
             message="Hello, let's start the conversation.",
             date_time=db.func.now()
         )
@@ -63,7 +63,7 @@ class ConversationResource(Resource):
             last_message = last_msg.message if last_msg else None
 
             # If the passed user_id sent the last message, prepend "You: "
-            if last_msg and ((last_msg.task_giver == user_id) or (last_msg.task_doer == user_id)):
+            if last_msg and ((last_msg.sender_id == user_id)):
                 last_message = f"You: {last_message}"
 
             result.append({
@@ -78,7 +78,6 @@ class ConversationResource(Resource):
                 "last_msg_id": last_msg_id,
                 "last_message": last_message
             })
-
         try:
             return result
         except TypeError as e:

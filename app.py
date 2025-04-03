@@ -14,7 +14,9 @@ from resources.auth_resource import SignupResource, VerifyOTPResource, LoginReso
 from resources.user_resource import UserProfileResource, UserHealthResource
 from resources.task_resource import TaskResource
 from resources.conversation_resource import ConversationResource
+from resources.connection_resource import Connection
 from datetime import timedelta
+from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
 
 load_dotenv()
@@ -41,7 +43,7 @@ def create_app():
     bcrypt.init_app(app)
     db.init_app(app)
     jwt = JWTManager(app)
-
+    socketio = SocketIO(app)
     # Configure Flask-Caching
     cache = Cache(app)
     app.cache = cache  # Explicitly register cache with app
@@ -100,8 +102,11 @@ def create_app():
 
 # conversatoin Resource
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
+    
+# websocket user_connection
+    api.add_resource(Connection, '/user/connect')
+    
     return app
-
 if __name__ == '__main__':
     app = create_app()
     app.run()
