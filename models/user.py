@@ -2,9 +2,6 @@ from . import db
 from sqlalchemy_serializer import SerializerMixin
 from sqlalchemy import Index
 
-# ---------------------------------------------------------------------------
-#  Users
-# ---------------------------------------------------------------------------
 class User(db.Model, SerializerMixin):
     """User model representing application users."""
     __tablename__ = 'users'
@@ -12,8 +9,12 @@ class User(db.Model, SerializerMixin):
         Index('idx_verification', 'otp_code', 'otp_expires_at'),
     )
 
-    # Serialization rules to exclude sensitive information
-    serialize_rules = ('-password', '-otp_code', '-reset_token', '-reset_expires_at')
+    # Exclude sensitive fields and circular relationships
+    serialize_rules = (
+        '-password', '-otp_code', '-reset_token', '-reset_expires_at',
+        '-conversations_as_giver', '-conversations_as_doer',
+        '-messages_as_sender', '-messages_as_reciever'
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False, index=True)
@@ -36,9 +37,8 @@ class User(db.Model, SerializerMixin):
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
 
-    # Relationships
+    # Relationships (not automatically serialized)
     conversations_as_giver = db.relationship('Conversation', foreign_keys='Conversation.task_giver', backref='task_giver_user')
     conversations_as_doer = db.relationship('Conversation', foreign_keys='Conversation.task_doer', backref='task_doer_user')
     messages_as_sender = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender_user')
     messages_as_reciever = db.relationship('Message', foreign_keys='Message.reciever_id', backref='reciever_user')
-    
