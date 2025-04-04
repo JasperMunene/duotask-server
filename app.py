@@ -17,7 +17,9 @@ from resources.conversation_resource import ConversationResource
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
-from socket_events import handle_connect, handle_disconnect, handle_message_read, handle_mark_all_delivered, handle_send_message, handle_typing  # Import event handlers
+from socket_events import handle_connect, handle_disconnect, handle_message_read, handle_mark_all_delivered, handle_send_message, handle_typing
+import google.generativeai as genai
+import threading
 
 load_dotenv()
 
@@ -39,30 +41,34 @@ def create_app():
         PROFILE_CACHE_TTL=300
     )
 
+    # Configure AI model
+    genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+    app.ai_model = genai.GenerativeModel('gemini-2.0-flash')
+
     # Initialize extensions
     bcrypt.init_app(app)
     db.init_app(app)
     jwt = JWTManager(app)
-    socketio.init_app(app)  # Attach socketio to the Flask app
+    socketio.init_app(app, cors_allowed_origins="*")  # Configure CORS for Socket.IO
+
     # Configure Flask-Caching
     cache = Cache(app)
-    app.cache = cache  # Explicitly register cache with app
+    app.cache = cache
 
-    # Configure direct Redis connection
+    # Configure Redis connection
     app.redis = redis.Redis.from_url(
         app.config["CACHE_REDIS_URL"],
         ssl_cert_reqs=None,
         decode_responses=True
     )
 
-    CORS(app
-        #  ,
-        #  resources={r"/auth/*": {"origins": app.config['FRONTEND_URL']}},
-        #  supports_credentials=True,
-        #  allow_headers=["Content-Type", "Authorization"],
-        #  methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-         )
+    # Set up a lock for category creation to prevent race conditions
+    app.category_lock = threading.Lock()
 
+    # Enable CORS
+    CORS(app)
+
+    # Database migrations
     migrate = Migrate(app, db)
 
     # Initialize OAuth
@@ -80,11 +86,9 @@ def create_app():
             except redis.ConnectionError:
                 return {"status": "healthy", "redis": "disconnected"}, 200
 
-#Health Resource
+    # Register resources
     api.add_resource(HealthCheck, '/health')
     api.add_resource(UserHealthResource, '/health/user')
-
-#Auth Resource
     api.add_resource(SignupResource, '/auth/signup')
     api.add_resource(VerifyOTPResource, '/auth/verify-otp')
     api.add_resource(LoginResource, '/auth/login')
@@ -96,16 +100,17 @@ def create_app():
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
     api.add_resource(UserProfileResource, '/user/profile')
-
-#Task Resource
     api.add_resource(TaskResource, '/tasks')
     api.add_resource(SingleTaskResource, '/tasks/<int:task_id>')
-
-# conversatoin Resource
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
-    return app
 
+    return app
 
 if __name__ == '__main__':
     app = create_app()
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+    socketio.run(
+        app,
+        host=os.getenv('HOST', '0.0.0.0'),
+        port=int(os.getenv('PORT', 5000)),
+        debug=os.getenv('DEBUG', 'False').lower() == 'true'
+    )

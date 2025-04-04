@@ -12,11 +12,12 @@ from models.user import User
 from models.user_info import UserInfo
 from models.task_image import TaskImage
 from datetime import datetime
+import os
 import math
 import logging
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
-
 
 # Haversine formula for distance calculation
 def haversine(lat1, lon1, lat2, lon2):
@@ -223,22 +224,31 @@ class TaskResource(Resource):
         parser.add_argument('city', type=str)
         parser.add_argument('area', type=str)
         parser.add_argument('images', type=str, action='append')
-        parser.add_argument('category_ids', type=int, action='append')
+        # Note: No category_ids argument – category will be generated via AI.
 
         data = parser.parse_args()
-        user_id = get_jwt_identity()
+        user_id = get_jwt_identity()  # Assumes JWT is used for authentication
 
         # Validate business logic
         self._validate_budget(data['budget'])
         self._validate_schedule(data)
         location_data = self._validate_location(data)
-        categories = self._validate_categories(data.get('category_ids', []))
 
         try:
-            # Atomic transaction
+            generated_category_name = self._categorize_task(data['title'], data['description'])
+        except Exception as e:
+            logger.error(f"AI categorization failed: {str(e)}")
+            generated_category_name = "Uncategorized"
+
+        # Normalize and find/create category
+        category_name = generated_category_name.strip().title()
+        category = self._get_or_create_category(category_name)
+
+        try:
+            # Atomic transaction: Create task, add images, and link category
             task = self._create_task(user_id, data, location_data)
             self._create_images(task, data.get('images', []))
-            self._link_categories(task, categories)
+            self._link_category(task, category)
 
             db.session.commit()
             self._invalidate_cache()
@@ -299,19 +309,74 @@ class TaskResource(Resource):
             }
         return None
 
-    def _validate_categories(self, category_ids):
-        """Validate and return existing categories"""
-        if not category_ids:
-            return []
+    def _get_or_create_category(self, category_name):
+        """Thread-safe category retrieval/creation"""
+        try:
+            # Use mutex lock for category creation to prevent race conditions
+            with current_app.category_lock:
+                category = Category.query.filter(
+                    func.lower(Category.name) == func.lower(category_name)
+                ).first()
 
-        categories = Category.query.filter(
-            Category.id.in_(category_ids)
-        ).all()
+                if not category:
+                    category = Category(name=category_name)
+                    db.session.add(category)
+                    db.session.flush()  # Flush to get ID without commit
 
-        if len(categories) != len(category_ids):
-            abort(404, message="One or more categories not found")
+                return category
+        except Exception as e:
+            logger.error(f"Category handling failed: {str(e)}")
+            abort(500, message="Failed to process task category")
 
-        return categories
+    def _categorize_task(self, title, description):
+        """Improved AI categorization with proper error handling"""
+        try:
+            # Retrieve AI model from the app attribute
+            model = current_app.ai_model
+            if not model:
+                raise ValueError("AI model not configured")
+
+            # Get existing categories once per request
+            existing_categories = Category.query.with_entities(Category.name).all()
+            category_names = [c[0] for c in existing_categories]
+
+            # Structured prompt with examples
+            prompt = f"""Task Categorization Guide:
+1. Analyze this task: "{title}" - {description}
+2. Existing categories: {', '.join(category_names) or 'None'}
+3. Choose BEST existing category or create new one
+4. Return ONLY the category name
+Examples:
+- "Need plumbing help" → "Plumbing"
+- "Logo design needed" → "Graphic Design"
+Output:"""
+
+            # Configure API call
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    temperature=0.2,
+                    max_output_tokens=20,
+                    candidate_count=1
+                )
+            )
+
+            # Validate response structure
+            if not response:
+                raise ValueError("No candidates in AI response")
+
+            category = response.text.strip().title()
+
+            # Basic sanitization
+            return category[:50].strip(' .') or "Uncategorized"
+
+        except Exception as e:
+            logger.error(f"AI Categorization error: {str(e)}")
+            return "Uncategorized"
+
+    def _link_category(self, task, category):
+        """Link the generated or existing category to the task."""
+        task.categories.append(category)
 
     def _create_task(self, user_id, data, location_data):
         """Create task and associated location"""
@@ -342,26 +407,21 @@ class TaskResource(Resource):
             images = [TaskImage(task_id=task.id, image_url=url) for url in image_urls]
             db.session.bulk_save_objects(images)
 
-    def _link_categories(self, task, categories):
-        """Link validated categories to task"""
-        if categories:
-            task.categories.extend(categories)
-
     def _invalidate_cache(self):
         """Invalidate relevant cached data"""
         try:
-            cache = current_app.extensions["cache"]
-            # Delete all task list caches
-            cache.delete_memoized(TaskResource.get)
+            cache = current_app.cache
+            # Delete memoized cache for task lists
+            cache.delete_memoized(self.get)
             # Delete pattern-based keys using Redis directly
             redis_conn = current_app.redis
-            cursor, keys = '0', []
-            while cursor != 0:
-                cursor, partial = redis_conn.scan(
-                    cursor=cursor,
-                    match='tasks_*'
-                )
+            cursor = 0
+            keys = []
+            while True:
+                cursor, partial = redis_conn.scan(cursor=cursor, match='tasks_*')
                 keys.extend(partial)
+                if cursor == 0:
+                    break
             if keys:
                 redis_conn.delete(*keys)
         except Exception as e:
@@ -385,7 +445,6 @@ class TaskResource(Resource):
             'categories': [c.to_dict() for c in fresh_task.categories],
             'images': [img.to_dict() for img in fresh_task.images]
         }
-
 
 # Single Task Resource with rate limiting
 class SingleTaskResource(Resource):
