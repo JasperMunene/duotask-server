@@ -28,7 +28,7 @@ class Task(db.Model, SerializerMixin):
     deadline_date = db.Column(db.DateTime, nullable=True, comment="Deadline date if schedule_type is 'before_day'")
     preferred_start_time = db.Column(db.Time, nullable=True, comment="Start time if schedule_type is 'flexible'")
     preferred_end_time = db.Column(db.Time, nullable=True, comment="End time if schedule_type is 'flexible'")
-    status = db.Column(db.String(20), nullable=False, comment="Task status: e.g., 'open', 'in_progress', 'completed', 'cancelled'", server_default="open")
+    status = db.Column(db.String(20), nullable=False, comment="Task status: e.g., 'open', 'in_progress', 'completed', 'cancelled'", server_default="open", default="open")
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
 

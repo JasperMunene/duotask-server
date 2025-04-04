@@ -2,16 +2,21 @@
 from flask_restful import Resource, reqparse, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
-from flask_limiter import Limiter  # Ensure you have a global limiter instance attached to your app
 from sqlalchemy import func, case
 from sqlalchemy.orm import joinedload
+from models import db
 from models.task import Task
 from models.task_location import TaskLocation
 from models.category import Category
 from models.user import User
 from models.user_info import UserInfo
+from models.task_image import TaskImage
 from datetime import datetime
 import math
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 # Haversine formula for distance calculation
 def haversine(lat1, lon1, lat2, lon2):
@@ -190,6 +195,196 @@ class TaskResource(Resource):
             )
 
         return serialized
+
+    @jwt_required()
+    def post(self):
+        """Create a new task with validation and atomic operations"""
+        parser = reqparse.RequestParser()
+        parser.add_argument('title', type=str, required=True,
+                            help='Task title is required')
+        parser.add_argument('description', type=str, required=True,
+                            help='Task description is required')
+        parser.add_argument('work_mode', type=str, required=True,
+                            choices=['remote', 'physical'],
+                            help='Invalid work mode. Allowed: remote, physical')
+        parser.add_argument('budget', type=float, required=True,
+                            help='Budget must be a positive number')
+        parser.add_argument('schedule_type', type=str, required=True,
+                            choices=['specific_day', 'before_day', 'flexible'],
+                            help='Invalid schedule type')
+        parser.add_argument('specific_date', type=lambda x: datetime.fromisoformat(x) if x else None)
+        parser.add_argument('deadline_date', type=lambda x: datetime.fromisoformat(x) if x else None)
+        parser.add_argument('preferred_start_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
+        parser.add_argument('preferred_end_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
+        parser.add_argument('latitude', type=float)
+        parser.add_argument('longitude', type=float)
+        parser.add_argument('country', type=str)
+        parser.add_argument('state', type=str)
+        parser.add_argument('city', type=str)
+        parser.add_argument('area', type=str)
+        parser.add_argument('images', type=str, action='append')
+        parser.add_argument('category_ids', type=int, action='append')
+
+        data = parser.parse_args()
+        user_id = get_jwt_identity()
+
+        # Validate business logic
+        self._validate_budget(data['budget'])
+        self._validate_schedule(data)
+        location_data = self._validate_location(data)
+        categories = self._validate_categories(data.get('category_ids', []))
+
+        try:
+            # Atomic transaction
+            task = self._create_task(user_id, data, location_data)
+            self._create_images(task, data.get('images', []))
+            self._link_categories(task, categories)
+
+            db.session.commit()
+            self._invalidate_cache()
+
+            return self._serialize_new_task(task), 201
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Task creation failed: {str(e)}", exc_info=True)
+            abort(500, message="Failed to create task")
+
+    def _validate_budget(self, budget):
+        """Validate budget constraints"""
+        if budget <= 0 or budget > 1000000:  # $1M max
+            abort(400, message="Budget must be between 0.01 and 1,000,000")
+
+    def _validate_schedule(self, data):
+        """Validate scheduling constraints"""
+        now = datetime.now()
+
+        if data['schedule_type'] == 'specific_day':
+            if not data['specific_date']:
+                abort(400, message="Specific date required for 'specific_day' schedule")
+            if data['specific_date'] <= now:
+                abort(400, message="Specific date must be in the future")
+
+        elif data['schedule_type'] == 'before_day':
+            if not data['deadline_date']:
+                abort(400, message="Deadline date required for 'before_day' schedule")
+            if data['deadline_date'] <= now:
+                abort(400, message="Deadline must be in the future")
+
+        elif data['schedule_type'] == 'flexible':
+            if not data['preferred_start_time'] or not data['preferred_end_time']:
+                abort(400, message="Start and end times required for 'flexible' schedule")
+            if data['preferred_start_time'] >= data['preferred_end_time']:
+                abort(400, message="Start time must be before end time")
+
+    def _validate_location(self, data):
+        """Validate and extract location data"""
+        if data['work_mode'] == 'physical':
+            required = ['latitude', 'longitude', 'country', 'state', 'city']
+            missing = [field for field in required if not data.get(field)]
+            if missing:
+                abort(400, message=f"Missing location fields: {', '.join(missing)}")
+
+            if not (-90 <= data['latitude'] <= 90):
+                abort(400, message="Invalid latitude (range: -90 to 90)")
+            if not (-180 <= data['longitude'] <= 180):
+                abort(400, message="Invalid longitude (range: -180 to 180)")
+
+            return {
+                'latitude': data['latitude'],
+                'longitude': data['longitude'],
+                'country': data['country'],
+                'state': data['state'],
+                'city': data['city'],
+                'area': data.get('area')
+            }
+        return None
+
+    def _validate_categories(self, category_ids):
+        """Validate and return existing categories"""
+        if not category_ids:
+            return []
+
+        categories = Category.query.filter(
+            Category.id.in_(category_ids)
+        ).all()
+
+        if len(categories) != len(category_ids):
+            abort(404, message="One or more categories not found")
+
+        return categories
+
+    def _create_task(self, user_id, data, location_data):
+        """Create task and associated location"""
+        task = Task(
+            user_id=user_id,
+            title=data['title'],
+            description=data['description'],
+            work_mode=data['work_mode'],
+            budget=data['budget'],
+            schedule_type=data['schedule_type'],
+            specific_date=data.get('specific_date'),
+            deadline_date=data.get('deadline_date'),
+            preferred_start_time=data.get('preferred_start_time'),
+            preferred_end_time=data.get('preferred_end_time')
+        )
+
+        db.session.add(task)
+        db.session.flush()  # Generate task ID
+
+        if location_data:
+            task.location = TaskLocation(**location_data)
+
+        return task
+
+    def _create_images(self, task, image_urls):
+        """Bulk create task images"""
+        if image_urls:
+            images = [TaskImage(task_id=task.id, image_url=url) for url in image_urls]
+            db.session.bulk_save_objects(images)
+
+    def _link_categories(self, task, categories):
+        """Link validated categories to task"""
+        if categories:
+            task.categories.extend(categories)
+
+    def _invalidate_cache(self):
+        """Invalidate relevant cached data"""
+        try:
+            cache = current_app.extensions["cache"]
+            # Delete all task list caches
+            cache.delete_memoized(TaskResource.get)
+            # Delete pattern-based keys using Redis directly
+            redis_conn = current_app.redis
+            cursor, keys = '0', []
+            while cursor != 0:
+                cursor, partial = redis_conn.scan(
+                    cursor=cursor,
+                    match='tasks_*'
+                )
+                keys.extend(partial)
+            if keys:
+                redis_conn.delete(*keys)
+        except Exception as e:
+            logger.error(f"Cache invalidation failed: {str(e)}")
+
+    def _serialize_new_task(self, task):
+        """Eager load and serialize new task"""
+        fresh_task = Task.query.options(
+            joinedload(Task.location),
+            joinedload(Task.categories),
+            joinedload(Task.images),
+            joinedload(Task.user).joinedload(User.user_info)
+        ).get(task.id)
+
+        return {
+            'id': fresh_task.id,
+            'title': fresh_task.title,
+            'status': fresh_task.status,
+            'created_at': fresh_task.created_at.isoformat(),
+            'location': fresh_task.location.to_dict() if fresh_task.location else None,
+            'categories': [c.to_dict() for c in fresh_task.categories],
+            'images': [img.to_dict() for img in fresh_task.images]
+        }
 
 
 # Single Task Resource with rate limiting
