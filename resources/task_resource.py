@@ -276,11 +276,11 @@ class SingleTaskResource(Resource):
         return response
 
     def _get_task_views(self, task_id):
-        # Implement view tracking logic (e.g., using Redis)
+        # Implement view tracking logic
         return current_app.redis.get(f"task_views_{task_id}") or 0
 
     def _calculate_popularity(self, task):
-        # Example popularity algorithm (adjust weights as needed)
+        # Example popularity algorithm
         base_score = getattr(task, "bids_count", 0) * 0.5
         time_score = 1 / (1 + (datetime.now() - task.created_at).days)
         return round(base_score + time_score, 2)
