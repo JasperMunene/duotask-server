@@ -64,10 +64,12 @@ class ConversationResource(Resource):
             last_10_msgs = (
                 Message.query
                 .filter_by(conversation_id=convo.id)
-                .order_by(Message.date_time.desc())
+                .order_by(Message.date_time.desc())  # Use asc() to get messages in ascending order
                 .limit(10)
                 .all()
             )
+
+
 
             # Format messages
             messages = [
@@ -101,7 +103,9 @@ class ConversationResource(Resource):
                 "messages": messages,
                 "last_msg_id": last_msg.id if last_msg else None,
                 "lastMessage": last_message,
-                "time": last_msg.date_time.isoformat(),
+                "time": last_msg.date_time.isoformat() if last_msg else None,
+                "status": recipient.status,
+                "last_seen": recipient.last_seen.isoformat(),
                 "unread": unread
             })
 

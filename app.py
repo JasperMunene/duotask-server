@@ -17,7 +17,8 @@ from resources.conversation_resource import ConversationResource
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
-from resources.connection_resource import UserConnection, UserDisconnection
+from socket_events import handle_connect, handle_disconnect, handle_message_read, handle_mark_all_delivered, handle_send_message, handle_typing  # Import event handlers
+
 load_dotenv()
 
 def create_app():
@@ -102,10 +103,6 @@ def create_app():
 
 # conversatoin Resource
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
-
-# user connection
-    api.add_resource(UserConnection, '/user/connect')
-    api.add_resource(UserDisconnection, '/user/disconnect')
     return app
 
 
