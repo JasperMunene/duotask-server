@@ -1,4 +1,3 @@
-# task_resource.py
 from flask_restful import Resource, reqparse, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
@@ -12,9 +11,10 @@ from models.user import User
 from models.user_info import UserInfo
 from models.task_image import TaskImage
 from datetime import datetime
+import os
 import math
 import logging
-
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -395,7 +395,7 @@ class TaskResource(Resource):
                 else 'complete'
             )
         }
-# Single Task Resource with rate limiting
+
 class SingleTaskResource(Resource):
     @jwt_required()
     def get(self, task_id):
@@ -487,3 +487,191 @@ class SingleTaskResource(Resource):
         base_score = getattr(task, "bids_count", 0) * 0.5
         time_score = 1 / (1 + (datetime.now() - task.created_at).days)
         return round(base_score + time_score, 2)
+
+    @jwt_required()
+    def put(self, task_id):
+        parser = reqparse.RequestParser()
+        parser.add_argument('title', type=str)
+        parser.add_argument('description', type=str)
+        parser.add_argument('work_mode', type=str, choices=['remote', 'physical'])
+        parser.add_argument('budget', type=float)
+        parser.add_argument('schedule_type', type=str,
+                            choices=['specific_day', 'before_day', 'flexible'])
+        parser.add_argument('specific_date', type=lambda x: datetime.fromisoformat(x) if x else None)
+        parser.add_argument('deadline_date', type=lambda x: datetime.fromisoformat(x) if x else None)
+        parser.add_argument('preferred_start_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
+        parser.add_argument('preferred_end_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
+        parser.add_argument('latitude', type=float)
+        parser.add_argument('longitude', type=float)
+        parser.add_argument('country', type=str)
+        parser.add_argument('state', type=str)
+        parser.add_argument('city', type=str)
+        parser.add_argument('area', type=str)
+        parser.add_argument('status', type=str, choices=['open', 'in_progress', 'completed', 'cancelled'])
+        data = parser.parse_args()
+
+        current_user_id = get_jwt_identity()
+
+        try:
+            task = Task.query.filter_by(id=task_id).with_for_update().first()
+            if not task:
+                abort(404, message="Task not found")
+            if str(task.user_id) != current_user_id:
+                abort(403, message="Unauthorized to update this task")
+            if any(bid.status == 'accepted' for bid in task.bids):
+                abort(409, message="Cannot modify task with accepted bids")
+
+            self._validate_and_update_task(task, data)
+            self._validate_and_update_location(task, data)
+            task.updated_at = db.func.now()
+            db.session.commit()
+            self._invalidate_cache()
+            return self._serialize_updated_task(task), 200
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Task update failed: {str(e)}", exc_info=True)
+            if isinstance(e, HTTPException):
+                raise e
+            abort(500, message="Failed to update task")
+
+    def _validate_and_update_task(self, task, data):
+        if data.get('budget') is not None:
+            if data['budget'] <= 0 or data['budget'] > 1000000:
+                abort(400, message="Invalid budget amount")
+            task.budget = data['budget']
+
+        if data.get('schedule_type') is not None:
+            self._validate_schedule_update(task, data)
+
+        if data.get('status') is not None:
+            self._validate_status_transition(task.status, data['status'])
+
+        for field in ['title', 'description', 'work_mode', 'status']:
+            if data.get(field) is not None:
+                setattr(task, field, data[field])
+
+    def _validate_schedule_update(self, task, data):
+        now = datetime.now()
+        new_schedule_type = data['schedule_type']
+        if new_schedule_type == 'specific_day':
+            specific_date = data.get('specific_date') or task.specific_date
+            if not specific_date:
+                abort(400, message="Specific date required for 'specific_day' schedule")
+            if specific_date <= now:
+                abort(400, message="Specific date must be in the future")
+            task.specific_date = specific_date
+
+        elif new_schedule_type == 'before_day':
+            deadline_date = data.get('deadline_date') or task.deadline_date
+            if not deadline_date:
+                abort(400, message="Deadline date required for 'before_day' schedule")
+            if deadline_date <= now:
+                abort(400, message="Deadline must be in the future")
+            task.deadline_date = deadline_date
+
+        elif new_schedule_type == 'flexible':
+            start = data.get('preferred_start_time') or task.preferred_start_time
+            end = data.get('preferred_end_time') or task.preferred_end_time
+            if not start or not end:
+                abort(400, message="Start and end times required for 'flexible' schedule")
+            if start >= end:
+                abort(400, message="Start time must be before end time")
+            task.preferred_start_time = start
+            task.preferred_end_time = end
+
+        task.schedule_type = new_schedule_type
+
+    def _validate_location(self, data):
+        if data.get('work_mode') == 'physical':
+            required = ['latitude', 'longitude', 'country', 'state', 'city']
+            missing = [field for field in required if not data.get(field)]
+            if missing:
+                abort(400, message=f"Missing location fields: {', '.join(missing)}")
+            if not (-90 <= data['latitude'] <= 90):
+                abort(400, message="Invalid latitude (range: -90 to 90)")
+            if not (-180 <= data['longitude'] <= 180):
+                abort(400, message="Invalid longitude (range: -180 to 180)")
+            return {
+                'latitude': data['latitude'],
+                'longitude': data['longitude'],
+                'country': data['country'],
+                'state': data['state'],
+                'city': data['city'],
+                'area': data.get('area')
+            }
+        return None
+
+    def _validate_status_transition(self, current_status, new_status):
+        valid_transitions = {
+            'open': ['in_progress', 'cancelled'],
+            'in_progress': ['completed', 'cancelled'],
+            'completed': [],
+            'cancelled': []
+        }
+        if new_status not in valid_transitions.get(current_status, []):
+            abort(400, message=f"Invalid status transition from {current_status} to {new_status}")
+
+    def _validate_and_update_location(self, task, data):
+        work_mode = data.get('work_mode') or task.work_mode
+        if work_mode == 'physical':
+            location_data = self._get_location_data(task, data)
+            self._validate_location(location_data)
+            if task.location:
+                # Manually update each attribute
+                for key, value in location_data.items():
+                    setattr(task.location, key, value)
+            else:
+                task.location = TaskLocation(**location_data)
+        else:
+            if task.location:
+                db.session.delete(task.location)
+
+    def _get_location_data(self, task, data):
+        return {
+            'latitude': data.get('latitude') or (task.location.latitude if task.location else None),
+            'longitude': data.get('longitude') or (task.location.longitude if task.location else None),
+            'country': data.get('country') or (task.location.country if task.location else None),
+            'state': data.get('state') or (task.location.state if task.location else None),
+            'city': data.get('city') or (task.location.city if task.location else None),
+            'area': data.get('area') or (task.location.area if task.location else None)
+        }
+
+    def _invalidate_cache(self):
+        """Invalidate relevant cached data"""
+        try:
+            cache = current_app.cache
+            cache.delete_memoized(self.get)  # Delete memoized cache for task lists
+
+            # Delete pattern-based keys using Redis directly
+            redis_conn = current_app.redis
+            cursor = 0
+            keys = []
+            while True:
+                cursor, partial = redis_conn.scan(cursor=cursor, match='tasks_*')
+                keys.extend(partial)
+                if cursor == 0:
+                    break
+            if keys:
+                redis_conn.delete(*keys)
+        except Exception as e:
+            logger.error(f"Cache invalidation failed: {str(e)}")
+
+    def _serialize_updated_task(self, task):
+        fresh_task = Task.query.options(
+            joinedload(Task.location),
+            joinedload(Task.categories),
+            joinedload(Task.images),
+            joinedload(Task.user).joinedload(User.user_info)
+        ).get(task.id)
+        return {
+            'id': fresh_task.id,
+            'title': fresh_task.title,
+            'status': fresh_task.status,
+            'updated_at': fresh_task.updated_at.isoformat(),
+            'location': fresh_task.location.to_dict() if fresh_task.location else None,
+            'categories': [c.to_dict() for c in fresh_task.categories],
+            'images': [img.to_dict() for img in fresh_task.images],
+            'budget': float(fresh_task.budget),
+            'schedule_type': fresh_task.schedule_type
+        }
