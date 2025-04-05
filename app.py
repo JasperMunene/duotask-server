@@ -4,6 +4,7 @@ from flask_migrate import Migrate
 from flask_caching import Cache
 from dotenv import load_dotenv
 from flask_cors import CORS
+from celery import Celery
 import redis
 import os
 from models import db
@@ -37,6 +38,13 @@ def create_app():
         FRONTEND_URL=os.getenv("FRONTEND_URL", "http://localhost:3000"),
         CACHE_TYPE="RedisCache",
         CACHE_REDIS_URL=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        CELERY_BROKER_URL=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+        CELERY_RESULT_BACKEND=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+        CELERY_TASK_SERIALIZER='json',
+        CELERY_RESULT_SERIALIZER = 'json',
+        CELERY_ACCEPT_CONTENT = ['json'],
+        CELERY_TIMEZONE = 'UTC',
+        CELERY_ENABLE_UTC = True,
         CACHE_DEFAULT_TIMEOUT=300,
         PROFILE_CACHE_TTL=300
     )
@@ -58,12 +66,17 @@ def create_app():
     # Configure Redis connection
     app.redis = redis.Redis.from_url(
         app.config["CACHE_REDIS_URL"],
-        ssl_cert_reqs=None,
         decode_responses=True
     )
 
     # Set up a lock for category creation to prevent race conditions
     app.category_lock = threading.Lock()
+
+    # Initialize Celery
+    celery = Celery(app.import_name)
+    celery.conf.update(app.config)
+    CELERYD_PREFETCH_MULTIPLIER=1,
+    app.celery = celery
 
     # Enable CORS
     CORS(app)
@@ -77,6 +90,13 @@ def create_app():
 
     # Setup API resources
     api = Api(app)
+
+    class ContextTask(celery.Task):
+        def __call__(self, *args, **kwargs):
+            with app.app_context():
+                return self.run(*args, **kwargs)
+
+    celery.Task = ContextTask
 
     class HealthCheck(Resource):
         def get(self):
@@ -114,3 +134,5 @@ if __name__ == '__main__':
         port=int(os.getenv('PORT', 5000)),
         debug=os.getenv('DEBUG', 'False').lower() == 'true'
     )
+else:
+    app = create_app()

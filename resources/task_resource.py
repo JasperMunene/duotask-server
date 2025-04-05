@@ -224,7 +224,7 @@ class TaskResource(Resource):
         parser.add_argument('city', type=str)
         parser.add_argument('area', type=str)
         parser.add_argument('images', type=str, action='append')
-        # Note: No category_ids argument – category will be generated via AI.
+        # Note: No category_ids argument – category will be generated via the background worker.
 
         data = parser.parse_args()
         user_id = get_jwt_identity()  # Assumes JWT is used for authentication
@@ -235,25 +235,26 @@ class TaskResource(Resource):
         location_data = self._validate_location(data)
 
         try:
-            generated_category_name = self._categorize_task(data['title'], data['description'])
-        except Exception as e:
-            logger.error(f"AI categorization failed: {str(e)}")
-            generated_category_name = "Uncategorized"
-
-        # Normalize and find/create category
-        category_name = generated_category_name.strip().title()
-        category = self._get_or_create_category(category_name)
-
-        try:
-            # Atomic transaction: Create task, add images, and link category
+            # Atomic transaction: Create task, add images, and assign temporary category
             task = self._create_task(user_id, data, location_data)
             self._create_images(task, data.get('images', []))
-            self._link_category(task, category)
+
+            # Assign temporary "Uncategorized" category; worker will update this later.
+            temp_category = self._get_or_create_category("Uncategorized")
+            task.categories.append(temp_category)
 
             db.session.commit()
             self._invalidate_cache()
 
+            # Enqueue background task for AI categorization
+            current_app.celery.send_task(
+                'tasks.categorize_task',
+                args=(task.id,),
+                queue='ai_tasks'
+            )
+
             return self._serialize_new_task(task), 201
+
         except Exception as e:
             db.session.rollback()
             logger.error(f"Task creation failed: {str(e)}", exc_info=True)
@@ -312,71 +313,18 @@ class TaskResource(Resource):
     def _get_or_create_category(self, category_name):
         """Thread-safe category retrieval/creation"""
         try:
-            # Use mutex lock for category creation to prevent race conditions
             with current_app.category_lock:
                 category = Category.query.filter(
                     func.lower(Category.name) == func.lower(category_name)
                 ).first()
-
                 if not category:
                     category = Category(name=category_name)
                     db.session.add(category)
-                    db.session.flush()  # Flush to get ID without commit
-
+                    db.session.flush()  # Flush to generate an ID
                 return category
         except Exception as e:
             logger.error(f"Category handling failed: {str(e)}")
             abort(500, message="Failed to process task category")
-
-    def _categorize_task(self, title, description):
-        """Improved AI categorization with proper error handling"""
-        try:
-            # Retrieve AI model from the app attribute
-            model = current_app.ai_model
-            if not model:
-                raise ValueError("AI model not configured")
-
-            # Get existing categories once per request
-            existing_categories = Category.query.with_entities(Category.name).all()
-            category_names = [c[0] for c in existing_categories]
-
-            # Structured prompt with examples
-            prompt = f"""Task Categorization Guide:
-1. Analyze this task: "{title}" - {description}
-2. Existing categories: {', '.join(category_names) or 'None'}
-3. Choose BEST existing category or create new one
-4. Return ONLY the category name
-Examples:
-- "Need plumbing help" → "Plumbing"
-- "Logo design needed" → "Graphic Design"
-Output:"""
-
-            # Configure API call
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.2,
-                    max_output_tokens=20,
-                    candidate_count=1
-                )
-            )
-
-            # Validate response structure
-            if not response:
-                raise ValueError("No candidates in AI response")
-
-            category = response.text.strip().title()
-
-            # Basic sanitization
-            return category[:50].strip(' .') or "Uncategorized"
-
-        except Exception as e:
-            logger.error(f"AI Categorization error: {str(e)}")
-            return "Uncategorized"
-
-    def _link_category(self, task, category):
-        """Link the generated or existing category to the task."""
-        task.categories.append(category)
 
     def _create_task(self, user_id, data, location_data):
         """Create task and associated location"""
@@ -398,7 +346,6 @@ Output:"""
 
         if location_data:
             task.location = TaskLocation(**location_data)
-
         return task
 
     def _create_images(self, task, image_urls):
@@ -411,8 +358,8 @@ Output:"""
         """Invalidate relevant cached data"""
         try:
             cache = current_app.cache
-            # Delete memoized cache for task lists
-            cache.delete_memoized(self.get)
+            cache.delete_memoized(self.get)  # Delete memoized cache for task lists
+
             # Delete pattern-based keys using Redis directly
             redis_conn = current_app.redis
             cursor = 0
@@ -443,9 +390,12 @@ Output:"""
             'created_at': fresh_task.created_at.isoformat(),
             'location': fresh_task.location.to_dict() if fresh_task.location else None,
             'categories': [c.to_dict() for c in fresh_task.categories],
-            'images': [img.to_dict() for img in fresh_task.images]
+            'images': [img.to_dict() for img in fresh_task.images],
+            'categorization_status': (
+                'pending' if any(c.name.lower() == 'uncategorized' for c in fresh_task.categories)
+                else 'complete'
+            )
         }
-
 # Single Task Resource with rate limiting
 class SingleTaskResource(Resource):
     @jwt_required()
