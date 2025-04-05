@@ -1,5 +1,6 @@
 from . import db
 from sqlalchemy_serializer import SerializerMixin
+from sqlalchemy import Index
 
 # Association table for the many-to-many relationship between tasks and categories
 task_categories = db.Table(
@@ -15,6 +16,11 @@ class Task(db.Model, SerializerMixin):
     """Task model representing a task posted on the platform."""
     __tablename__ = 'tasks'
 
+    __table_args__ = (
+        Index('ix_tasks_is_deleted', 'is_deleted'),
+        Index('ix_tasks_deleted_at', 'deleted_at'),
+    )
+
     serialize_rules = ('-user.tasks', '-location.task', '-categories.tasks', '-images.task')
 
     id = db.Column(db.Integer, primary_key=True)
@@ -29,6 +35,8 @@ class Task(db.Model, SerializerMixin):
     preferred_start_time = db.Column(db.Time, nullable=True, comment="Start time if schedule_type is 'flexible'")
     preferred_end_time = db.Column(db.Time, nullable=True, comment="End time if schedule_type is 'flexible'")
     status = db.Column(db.String(20), nullable=False, comment="Task status: e.g., 'open', 'in_progress', 'completed', 'cancelled'", server_default="open", default="open")
+    is_deleted = db.Column(db.Boolean, default=False, nullable=False)
+    deleted_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
 

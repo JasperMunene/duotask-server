@@ -10,6 +10,8 @@ from models.category import Category
 from models.user import User
 from models.user_info import UserInfo
 from models.task_image import TaskImage
+from models.bid import Bid
+from models.task_assignment import TaskAssignment
 from datetime import datetime
 import os
 import math
@@ -675,3 +677,178 @@ class SingleTaskResource(Resource):
             'budget': float(fresh_task.budget),
             'schedule_type': fresh_task.schedule_type
         }
+
+    @jwt_required()
+    def delete(self, task_id):
+        """
+        Delete a task (soft or hard delete)
+        ---
+        parameters:
+          - name: task_id
+            in: path
+            type: integer
+            required: true
+            description: Numeric ID of the task to delete
+          - name: permanent
+            in: query
+            type: boolean
+            default: false
+            description: Permanently delete the task (irreversible)
+        responses:
+          204:
+            description: Task successfully deleted
+          400:
+            description: Invalid request parameters
+          403:
+            description: Unauthorized deletion attempt
+          404:
+            description: Task not found
+          409:
+            description: Task has active commitments preventing deletion
+        """
+        # Parse request parameters
+        delete_parser = reqparse.RequestParser()
+        delete_parser.add_argument(
+            'permanent',
+            type=SingleTaskResource.str_to_bool,
+            default=False,
+            location='args',
+            help="Permanent deletion flag must be boolean"
+        )
+        args = delete_parser.parse_args()
+        permanent_deletion = args['permanent']
+
+
+        current_user_id = get_jwt_identity()
+
+        try:
+            # Atomic transaction with row locking
+            with db.session.begin_nested():
+                task = Task.query.filter_by(id=task_id).with_for_update().first()
+
+                # Validation checks
+                if not task:
+                    abort(404, message="Task not found")
+                if task.is_deleted and not permanent_deletion:
+                    abort(410, message="Task already marked as deleted")
+                if str(task.user_id) != current_user_id:
+                    abort(403, message="Authorization failed: User doesn't own this task")
+                if self._has_active_commitments(task):
+                    abort(409, message="Task cannot be deleted due to active bids or assignments")
+
+                # Execute deletion strategy
+                if permanent_deletion:
+                    self._perform_hard_deletion(task)
+                else:
+                    self._perform_soft_deletion(task)
+
+                # Post-deletion cleanup
+                self._invalidate_related_caches(task_id, task.user_id)
+
+            db.session.commit()
+            return '', 204
+
+        except ValueError as ve:
+            db.session.rollback()
+            logger.warning(f"Invalid deletion request: {str(ve)}")
+            abort(400, message=str(ve))
+        except HTTPException as he:
+            db.session.rollback()
+            raise he
+        except Exception as e:
+            db.session.rollback()
+            logger.critical(f"Critical deletion failure: {str(e)}", exc_info=True)
+            abort(500, message="Internal server error during deletion")
+
+    @staticmethod
+    def str_to_bool(value):
+        if isinstance(value, bool):
+            return value
+        if value.lower() in ('true', '1', 'yes'):
+            return True
+        elif value.lower() in ('false', '0', 'no'):
+            return False
+        else:
+            raise ValueError("Boolean value expected.")
+
+    def _has_active_commitments(self, task):
+        """Check for blocking relationships before deletion"""
+        active_bids_exist = db.session.query(
+            Bid.query.filter_by(
+                task_id=task.id,
+                status='accepted'
+            ).exists()
+        ).scalar()
+
+        active_assignments_exist = db.session.query(
+            TaskAssignment.query.filter_by(
+                task_id=task.id
+            ).filter(
+                TaskAssignment.status.in_(['assigned', 'in_progress'])
+            ).exists()
+        ).scalar()
+
+        return active_bids_exist or active_assignments_exist
+
+    def _perform_soft_deletion(self, task):
+        """Mark task as deleted while preserving data"""
+        task.is_deleted = True
+        task.deleted_at = db.func.now()
+        task.status = 'cancelled'
+
+        # Update related entities
+        Bid.query.filter_by(task_id=task.id).update(
+            {'status': 'rejected'},
+            synchronize_session=False
+        )
+
+        TaskAssignment.query.filter_by(task_id=task.id).update(
+            {'status': 'cancelled'},
+            synchronize_session=False
+        )
+
+    def _perform_hard_deletion(self, task):
+        """Permanently remove task and related data from system"""
+        # Delete associated records
+        TaskLocation.query.filter_by(task_id=task.id).delete()
+        TaskImage.query.filter_by(task_id=task.id).delete()
+
+        # Clear many-to-many relationships
+        task.categories = []
+
+        # Delete core task record
+        db.session.delete(task)
+
+    def _invalidate_related_caches(self, task_id, user_id):
+        """System-wide cache invalidation for task data"""
+        try:
+            redis = current_app.redis
+            cache = current_app.cache
+
+            # Invalidate individual task cache
+            cache.delete(f"task_{task_id}")
+
+            # Pattern-based cache clearance
+            patterns = [
+                'tasks_*',
+                f'user_tasks_{user_id}_*',
+                f'user_activity_{user_id}',
+                f'task_stats_{task_id}'
+            ]
+
+            for pattern in patterns:
+                cursor, keys = 0, []
+                while True:
+                    cursor, partial = redis.scan(
+                        cursor=cursor,
+                        match=pattern,
+                        count=1000
+                    )
+                    keys.extend(partial)
+                    if cursor == 0:
+                        break
+                if keys:
+                    redis.delete(*keys)
+
+        except Exception as cache_error:
+            logger.error(f"Cache invalidation error: {str(cache_error)}")
