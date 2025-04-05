@@ -19,7 +19,6 @@ from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
 from socket_events import handle_connect, handle_disconnect, handle_message_read, handle_mark_all_delivered, handle_send_message, handle_typing
-import google.generativeai as genai
 import threading
 
 load_dotenv()
@@ -48,10 +47,6 @@ def create_app():
         CACHE_DEFAULT_TIMEOUT=300,
         PROFILE_CACHE_TTL=300
     )
-
-    # Configure AI model
-    genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-    app.ai_model = genai.GenerativeModel('gemini-2.0-flash')
 
     # Initialize extensions
     bcrypt.init_app(app)

@@ -12,10 +12,9 @@ from models.user import User
 from models.user_info import UserInfo
 from models.task_image import TaskImage
 from datetime import datetime
-import os
 import math
 import logging
-import google.generativeai as genai
+
 
 logger = logging.getLogger(__name__)
 
