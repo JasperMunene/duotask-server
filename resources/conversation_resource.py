@@ -120,7 +120,7 @@
 # task_resource.py
 from flask_restful import Resource, reqparse
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from flask import current_app, jsonify, request
+from flask import current_app, request
 from models.conversation import Conversation
 from models.message import Message
 from models.user import User
