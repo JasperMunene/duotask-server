@@ -25,7 +25,6 @@ load_dotenv()
 
 def create_app():
     app = Flask(__name__)
-
     # Configure app
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY"),
