@@ -13,10 +13,9 @@ from models.task_image import TaskImage
 from models.bid import Bid
 from models.task_assignment import TaskAssignment
 from datetime import datetime
-import os
 import math
 import logging
-import google.generativeai as genai
+
 
 logger = logging.getLogger(__name__)
 

@@ -1,21 +1,31 @@
 # tasks.py
 from app import create_app
+from flask import current_app
 from models import db
 from models.task import Task
 from models.category import Category
-from sqlalchemy import func
+from models.task_image import TaskImage
+from sqlalchemy import func, desc
 import google.generativeai as genai
 import logging
 import os
+import time
+from datetime import datetime, timedelta
+from celery.schedules import crontab
 
 logger = logging.getLogger(__name__)
 
+# Configuration
+BATCH_SIZE = 500  # Optimal for most databases
+CHUNK_SIZE = 50   # For individual processing
+RETENTION_DAYS = 30
+MAX_RETRIES = 3
+RETRY_DELAY = 300  # 5 minutes
 
 def create_celery():
     app = create_app()
     celery = app.celery
     return celery
-
 
 celery = create_celery()
 
@@ -40,14 +50,14 @@ def categorize_task(self, task_id):
             model = genai.GenerativeModel('gemini-2.0-flash')
 
             prompt = f"""Task Categorization Guide:
-            1. Analyze this task: "{task.title}" - {task.description}
-            2. Existing categories: {', '.join(category_names) or 'None'}
-            3. Choose BEST existing category or create new one
-            4. Return ONLY the category name
-            Examples:
-            - "Need plumbing help" → "Plumbing"
-            - "Logo design needed" → "Graphic Design"
-            Output:"""
+1. Analyze this task: "{task.title}" - {task.description}
+2. Existing categories: {', '.join(category_names) or 'None'}
+3. Choose BEST existing category or create new one
+4. Return ONLY the category name
+Examples:
+- "Need plumbing help" → "Plumbing"
+- "Logo design needed" → "Graphic Design"
+Output:"""
 
             response = model.generate_content(
                 prompt,
@@ -70,7 +80,7 @@ def categorize_task(self, task_id):
                 db.session.add(category)
                 db.session.commit()
 
-            # Update task with category
+            # Update task with category (append association)
             task.categories.append(category)
             db.session.commit()
 
@@ -80,3 +90,124 @@ def categorize_task(self, task_id):
         except Exception as e:
             logger.error(f"Failed to categorize task {task_id}: {str(e)}")
             self.retry(exc=e)
+
+@celery.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(
+        crontab(hour=23, minute=0),
+        permanent_deletion_worker.s(),
+        name='scheduled-permanent-deletion',
+        expires=3600
+    )
+
+@celery.task(bind=True, acks_late=True, max_retries=MAX_RETRIES, queue='default')
+def permanent_deletion_worker(self):
+    """Enterprise-grade deletion worker with advanced features"""
+    logger.info("Permanent deletion worker has started execution.")
+    app = create_app()
+    with app.app_context():
+        try:
+            redis = current_app.redis
+            start_time = time.monotonic()
+            total_deleted = 0
+            failure_count = 0
+
+            cutoff_date = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
+            logger.info(f"Starting permanent deletion process for tasks deleted before {cutoff_date}")
+
+            query = Task.query.filter(
+                Task.is_deleted.is_(True),
+                Task.deleted_at <= cutoff_date
+            ).order_by(desc(Task.deleted_at))
+
+            last_id = None
+            while True:
+                batch = query
+                if last_id:
+                    batch = batch.filter(Task.id < last_id)
+
+                tasks = batch.limit(BATCH_SIZE).all()
+                if not tasks:
+                    break
+
+                for chunk in chunked(tasks, CHUNK_SIZE):
+                    try:
+                        chunk_deleted = process_deletion_chunk(chunk)
+                        total_deleted += chunk_deleted
+                    except Exception as chunk_error:
+                        logger.error(f"Chunk processing failed: {chunk_error}")
+                        failure_count += len(chunk)
+                        continue
+
+                last_id = tasks[-1].id
+                db.session.expunge_all()  # Prevent memory bloat
+
+            duration = time.monotonic() - start_time
+            logger.info(
+                f"Deletion completed. Total: {total_deleted}, "
+                f"Failures: {failure_count}, Duration: {duration:.2f}s"
+            )
+
+            # Update metrics in Redis
+            redis.hincrby('worker_metrics', 'tasks_deleted', total_deleted)
+            redis.hincrby('worker_metrics', 'deletion_failures', failure_count)
+
+            return {'deleted': total_deleted, 'failures': failure_count}
+
+        except Exception as e:
+            logger.critical(f"Critical worker failure: {str(e)}")
+            self.retry(countdown=RETRY_DELAY ** (self.request.retries + 1), exc=e)
+
+def process_deletion_chunk(chunk):
+    """Process a chunk of tasks with individual transactions"""
+    deleted_count = 0
+    for task in chunk:
+        try:
+            with db.session.begin_nested():  # Nested transaction per task
+                delete_task_assets(task)
+                db.session.delete(task)
+                invalidate_task_caches(task)
+                deleted_count += 1
+        except Exception as e:
+            logger.error(f"Failed to delete task {task.id}: {str(e)}")
+            db.session.rollback()
+            continue
+
+    db.session.commit()  # Commit all successful deletions
+    return deleted_count
+
+def delete_task_assets(task):
+    """Efficiently delete related entities using bulk operations"""
+    # Delete location if exists
+    if hasattr(task, 'location') and task.location:
+        db.session.delete(task.location)
+
+    # Bulk delete images
+    TaskImage.query.filter_by(task_id=task.id).delete()
+
+    # Clear category associations (do not delete the category itself)
+    task.categories = []
+
+def invalidate_task_caches(task):
+    """Efficient cache invalidation with pipelining"""
+    redis = current_app.redis  # Retrieve Redis from app context
+    pipe = redis.pipeline()
+
+    # Invalidate task-specific cache
+    pipe.delete(f"task_{task.id}")
+
+    # Invalidate user-related task caches
+    keys = redis.keys(f"user_{task.user_id}_tasks*")
+    if keys:
+        pipe.delete(*keys)
+    pipe.delete("recent_tasks", "featured_tasks")
+
+    # Mark for delayed list invalidation
+    pipe.sadd("pending_cache_invalidations", f"tasks_{task.user_id}")
+
+    pipe.execute()
+
+def chunked(iterable, size):
+    """Efficient chunking generator"""
+    for i in range(0, len(iterable), size):
+        yield iterable[i:i + size]

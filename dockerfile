@@ -2,8 +2,8 @@
 FROM python:3.9-slim-buster as base
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 
@@ -17,7 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create and set working directory
 WORKDIR /app
 
-# Create a non-root user
+# Set PYTHONPATH to include the working directory
+ENV PYTHONPATH=/app
+
+# Create a non-root user and change ownership
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
