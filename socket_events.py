@@ -13,8 +13,9 @@ def handle_connect():
     if user_id:
         with current_app.app_context():  # Ensuring we have the correct app context
             cache = current_app.cache
+            redis = current_app.redis
             cache.set(f"user_sid:{user_id}", request.sid, timeout=0)
-            cache.add("online_users", user_id)  # Track online user
+            redis.sadd("online_users", user_id)  # Track online user
             print(f"[+] User {user_id} connected with SID {request.sid}")
 
         user = User.query.get(user_id)
@@ -54,10 +55,10 @@ def handle_connect():
 def handle_disconnect():
     """Handle user disconnections and notify relevant users efficiently."""
     disconnected_user_id = None
-
+    user_id = request.args.get('user_id')
     with current_app.app_context():  # Ensuring cache access inside app context
         # Retrieve the online users from the cache
-        online_users = current_app.cache.get("online_users")
+        online_users = current_app.redis.smembers("online_users")
         
         if online_users is None:
             online_users = []  # Initialize as an empty list if it's not found in cache
@@ -72,8 +73,8 @@ def handle_disconnect():
                 # Remove the user's SID from the cache
                 current_app.cache.delete(f"user_sid:{user_id}")
                 # Remove the user ID from the online_users list in the cache
-                online_users.remove(user_id)
-                current_app.cache.set("online_users", online_users)  # Save the updated list back in the cache
+                # online_users.remove(user_id)
+                current_app.redis.srem("online_users", user_id)  # Save the updated list back in the cache
                 print(f"Updated online users: {online_users}")
                 break
 
