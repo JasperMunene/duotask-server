@@ -1,6 +1,7 @@
 from flask_restful import Resource, reqparse, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
+from werkzeug.exceptions import HTTPException
 from sqlalchemy import asc, desc
 from sqlalchemy.orm import joinedload
 from models import db
@@ -14,84 +15,68 @@ logger = logging.getLogger(__name__)
 
 class BidsResource(Resource):
     parser = reqparse.RequestParser()
-    parser.add_argument('status', type=str, location='args',
-                        choices=['pending', 'accepted', 'rejected'],
-                        help="Invalid bid status. Allowed: pending, accepted, rejected")
+    parser.add_argument(
+        'status', type=str, location='args',
+        choices=['pending', 'accepted', 'rejected'],
+        help="Invalid bid status. Allowed: pending, accepted, rejected"
+    )
     parser.add_argument('min_amount', type=float, location='args')
     parser.add_argument('max_amount', type=float, location='args')
-    parser.add_argument('sort', type=str, location='args',
-                        choices=['amount', 'created_at', 'updated_at'],
-                        default='created_at',
-                        help="Invalid sort field. Allowed: amount, created_at, updated_at")
-    parser.add_argument('order', type=str, location='args',
-                        choices=['asc', 'desc'], default='desc',
-                        help="Invalid sort order. Allowed: asc, desc")
+    parser.add_argument(
+        'sort', type=str, location='args',
+        choices=['amount', 'created_at', 'updated_at'],
+        default='created_at',
+        help="Invalid sort field. Allowed: amount, created_at, updated_at"
+    )
+    parser.add_argument(
+        'order', type=str, location='args',
+        choices=['asc', 'desc'], default='desc',
+        help="Invalid sort order. Allowed: asc, desc"
+    )
     parser.add_argument('page', type=int, default=1, location='args')
-    parser.add_argument('per_page', type=int, default=20, location='args',
-                        choices=[10, 20, 50, 100], help='Invalid items per page')
+    parser.add_argument(
+        'per_page', type=int, default=20, location='args',
+        choices=[10, 20, 50, 100], help='Invalid items per page'
+    )
 
     @jwt_required()
     def get(self, task_id):
-        """
-        Get bids for a specific task
-        ---
-        parameters:
-          - name: task_id
-            in: path
-            type: integer
-            required: true
-          - name: Authorization
-            in: header
-            type: string
-            required: true
-            description: JWT access token
-        responses:
-          200:
-            description: List of bids with pagination
-          403:
-            description: Unauthorized access
-          404:
-            description: Task not found
-        """
-        # Validate task existence and ownership
         current_user_id = get_jwt_identity()
+        # Ensure identity is an int (if you store ints in JWT)
+        try:
+            current_user_id = int(current_user_id)
+        except (TypeError, ValueError):
+            abort(403, message="Invalid user identity")
+
+        # Load task
         task = db.session.get(Task, task_id)
         if not task or task.is_deleted:
             abort(404, message="Task not found")
-        if str(task.user_id) != current_user_id:
+
+        if task.user_id != current_user_id:
             abort(403, message="Unauthorized access to bids")
 
-        # Parse request arguments
         args = self.parser.parse_args()
 
-        # Generate cache key
-        cache_key = f"task_bids_{task_id}_{str(args)}"
+        cache_key = f"task_bids_{task_id}_{args}"
+        cached = current_app.cache.get(cache_key)
+        if cached:
+            return cached
 
-        # Check cache
-        cached_data = current_app.cache.get(cache_key)
-        if cached_data:
-            return cached_data
-
-        # Base query with eager loading
-        query = Bid.query.filter_by(task_id=task_id).options(
-            joinedload(Bid.user).joinedload(User.user_info)
+        query = (
+            Bid.query
+            .filter_by(task_id=task_id)
+            .options(joinedload(Bid.user).joinedload(User.user_info))
         )
 
-        # Apply filters
         query = self._apply_filters(query, args)
-
-        # Apply sorting
         query = self._apply_sorting(query, args)
 
-        # Pagination
         paginated = query.paginate(
-            page=args['page'],
-            per_page=args['per_page'],
-            error_out=False
+            page=args['page'], per_page=args['per_page'], error_out=False
         )
 
-        # Serialize results
-        bids = [self._serialize_bid(bid) for bid in paginated.items]
+        bids = [self._serialize_bid(b) for b in paginated.items]
 
         response = {
             'bids': bids,
@@ -103,12 +88,10 @@ class BidsResource(Resource):
             }
         }
 
-        # Cache response for 5 minutes
         current_app.cache.set(cache_key, response, timeout=300)
         return response
 
     def _apply_filters(self, query, args):
-        """Apply query filters based on request parameters"""
         if args['status']:
             query = query.filter(Bid.status == args['status'])
         if args['min_amount'] is not None:
@@ -118,19 +101,15 @@ class BidsResource(Resource):
         return query
 
     def _apply_sorting(self, query, args):
-        """Apply sorting based on request parameters"""
-        sort_field = args['sort']
-        order = desc if args['order'] == 'desc' else asc
-
-        if sort_field == 'amount':
-            return query.order_by(order(Bid.amount))
-        if sort_field == 'created_at':
-            return query.order_by(order(Bid.created_at))
-        return query.order_by(order(Bid.updated_at))
+        order_fn = desc if args['order'] == 'desc' else asc
+        if args['sort'] == 'amount':
+            return query.order_by(order_fn(Bid.amount))
+        if args['sort'] == 'created_at':
+            return query.order_by(order_fn(Bid.created_at))
+        return query.order_by(order_fn(Bid.updated_at))
 
     def _serialize_bid(self, bid):
-        """Serialize bid with user information"""
-        user_info = bid.user.user_info if bid.user.user_info else None
+        ui = bid.user.user_info or None
         return {
             'id': bid.id,
             'amount': float(bid.amount),
@@ -141,8 +120,124 @@ class BidsResource(Resource):
             'user': {
                 'id': bid.user.id,
                 'name': bid.user.name,
-                'image': bid.user.image
-                # 'rating': user_info.rating if user_info else 0.0,
-                # 'completed_tasks': user_info.completed_tasks if user_info else 0
+                'image': bid.user.image,
+                # 'rating': ui.rating if ui else 0.0,
+                # 'completed_tasks': ui.completed_tasks if ui else 0
             }
         }
+
+    post_parser = reqparse.RequestParser()
+    post_parser.add_argument(
+        'amount', type=float, required=True,
+        help='Bid amount is required and must be a positive number'
+    )
+    post_parser.add_argument(
+        'message', type=str, required=False, default="", trim=True
+    )
+
+    @jwt_required()
+    def post(self, task_id):
+        current_user_id = get_jwt_identity()
+        try:
+            current_user_id = int(current_user_id)
+        except (TypeError, ValueError):
+            abort(403, message="Invalid user identity")
+
+        data = self.post_parser.parse_args()
+
+        try:
+            with db.session.begin_nested():
+                task = self._validate_task(task_id, current_user_id)
+                self._validate_bid_amount(data['amount'], task.budget)
+                self._check_existing_bid(task_id, current_user_id)
+
+                bid = Bid(
+                    task_id=task_id,
+                    user_id=current_user_id,
+                    amount=data['amount'],
+                    message=data['message'],
+                    status='pending'
+                )
+                db.session.add(bid)
+
+            db.session.commit()
+
+            self._invalidate_bid_cache(task_id)
+            self._notify_task_owner(task, bid)
+
+            return {
+                'message': 'Bid submitted successfully',
+                'bid_id': bid.id,
+                'status': bid.status
+            }, 201
+
+        except ValueError as ve:
+            db.session.rollback()
+            logger.warning(f"Bid validation failed: {ve}")
+            abort(400, message=str(ve))
+
+        except HTTPException:
+            db.session.rollback()
+            raise
+
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Bid creation failed: {e}", exc_info=True)
+            abort(500, message="Failed to create bid")
+
+    def _validate_task(self, task_id, user_id):
+        task = Task.query.filter_by(id=task_id, is_deleted=False).first()
+        if not task:
+            abort(404, message="Task not found")
+        if task.user_id == user_id:
+            abort(403, message="Self-bidding is not allowed")
+        if task.status != 'open':
+            abort(409, message="Task is not accepting bids")
+        return task
+
+    def _validate_bid_amount(self, bid_amount, task_budget):
+        """Validate bid amount against business rules:
+           - Must be positive
+           - Must be ≤ budget
+           - Must be ≥ MIN_BID_RATIO * budget
+        """
+        if bid_amount <= 0:
+            raise ValueError("Bid amount must be positive")
+
+        budget = float(task_budget)
+
+        # Upper bound
+        if bid_amount > budget:
+            raise ValueError("Bid amount exceeds task budget")
+
+        # Lower bound via config (default 50%)
+        min_ratio = current_app.config.get('MIN_BID_RATIO', 0.5)
+        min_allowed = budget * min_ratio
+        if bid_amount < min_allowed:
+            raise ValueError(
+                f"Bid amount must be at least {min_allowed:.2f} "
+                f"({int(min_ratio*100)}% of the budget)"
+            )
+
+    def _check_existing_bid(self, task_id, user_id):
+        if Bid.query.filter_by(task_id=task_id, user_id=user_id).first():
+            abort(409, message="You already have an active bid on this task")
+
+    def _invalidate_bid_cache(self, task_id):
+        try:
+            redis_cli = current_app.redis
+            # prefer scan_iter to avoid blocking
+            for key in redis_cli.scan_iter(f"task_bids_{task_id}_*"):
+                redis_cli.delete(key)
+        except Exception as e:
+            logger.error(f"Cache invalidation failed: {e}")
+
+    def _notify_task_owner(self, task, bid):
+        try:
+            current_app.celery.send_task(
+                'notifications.new_bid',
+                args=(task.user_id, bid.id),
+                queue='notifications'
+            )
+        except Exception as e:
+            logger.error(f"Failed to queue notification: {e}")
