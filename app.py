@@ -15,6 +15,7 @@ from resources.auth_resource import SignupResource, VerifyOTPResource, LoginReso
 from resources.user_resource import UserProfileResource, UserHealthResource
 from resources.task_resource import TaskResource, SingleTaskResource
 from resources.conversation_resource import ConversationResource, OlderMessages
+from resources.bid_resource import BidsResource
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
@@ -118,6 +119,8 @@ def create_app():
     api.add_resource(SingleTaskResource, '/tasks/<int:task_id>')
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
     api.add_resource(OlderMessages, '/messages/<int:conversation_id>')
+
+    api.add_resource(BidsResource, '/tasks/<int:task_id>/bids')
     return app
 
 if __name__ == '__main__':
