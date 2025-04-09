@@ -17,7 +17,8 @@ from resources.task_resource import TaskResource, SingleTaskResource
 from resources.conversation_resource import ConversationResource, OlderMessages
 from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
-
+from resources.user_wallet_resource import UserWalletResource
+from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
@@ -124,6 +125,9 @@ def create_app():
 
     api.add_resource(BidsResource, '/tasks/<int:task_id>/bids')
     api.add_resource(UserRelations, '/user-relations', '/user-relations/<int:other_user_id>')
+    api.add_resource(UserWalletResource, "/wallet")
+    api.add_resource(MpesaC2BResource, '/api/payment/mpesa/initate/<int:user_id>')
+    api.add_resource(MpesaCallbackResource, '/api/payment/mpesa/call_back')
     return app
 
 if __name__ == '__main__':
