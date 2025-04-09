@@ -17,3 +17,4 @@ class Conversation(db.Model, SerializerMixin):
 
     # Relationship: messages are loaded dynamically
     messages = db.relationship('Message', backref='conversation', lazy='dynamic')
+    

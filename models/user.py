@@ -2,6 +2,7 @@ from . import db
 from sqlalchemy_serializer import SerializerMixin
 from sqlalchemy import Index
 
+
 class User(db.Model, SerializerMixin):
     """User model representing application users."""
     __tablename__ = 'users'
@@ -13,7 +14,8 @@ class User(db.Model, SerializerMixin):
     serialize_rules = (
         '-password', '-otp_code', '-reset_token', '-reset_expires_at',
         '-conversations_as_giver', '-conversations_as_doer',
-        '-messages_as_sender', '-messages_as_reciever'
+        '-messages_as_sender', '-messages_as_reciever',
+        '-relations', '-related_to'
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -45,10 +47,24 @@ class User(db.Model, SerializerMixin):
         if new_status == "offline":
             self.last_seen = db.func.now()
         db.session.commit()
-    
-    
+
     # Relationships (not automatically serialized)
     conversations_as_giver = db.relationship('Conversation', foreign_keys='Conversation.task_giver', backref='task_giver_user')
     conversations_as_doer = db.relationship('Conversation', foreign_keys='Conversation.task_doer', backref='task_doer_user')
     messages_as_sender = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender_user')
     messages_as_reciever = db.relationship('Message', foreign_keys='Message.reciever_id', backref='reciever_user')
+
+    # 💬 User Relations
+    relations = db.relationship(
+        'UserRelation',
+        foreign_keys='UserRelation.user_id',
+        backref='user',
+        cascade="all, delete-orphan"
+    )
+
+    related_to = db.relationship(
+        'UserRelation',
+        foreign_keys='UserRelation.related_user_id',
+        backref='related_user',
+        cascade="all, delete-orphan"
+    )
