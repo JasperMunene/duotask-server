@@ -24,6 +24,7 @@ from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
 from socket_events import handle_connect, handle_disconnect, handle_message_read, handle_mark_all_delivered, handle_send_message, handle_typing
 import threading
+from utils.send_notification import Notify
 
 load_dotenv()
 

@@ -4,7 +4,7 @@ from models.user import User
 from models.conversation import Conversation
 from models.message import Message
 from models import db
-
+from utils.send_notification import Notify
 @socketio.on('connect')
 def handle_connect():
     """Handle user connections and notify relevant users efficiently."""
@@ -152,6 +152,7 @@ def handle_send_message(data):
     with current_app.app_context():
         # Check if receiver is online
         receiver_sid = current_app.cache.get(f"user_sid:{receiver_id}")
+        Notify(user_id=receiver_id, message="You got a new message", source="chat").post()
         if receiver_sid:
             # Update message status to delivered
             message = Message.query.get(new_message.id)

@@ -38,6 +38,7 @@ class SendSms:
         try:
             response = requests.post(url, data=payload, headers=headers, timeout=10)
             response.raise_for_status()
+            print("sent")
             return {"success": "success"}
         except requests.HTTPError as http_err:
             return {"error": f"HTTP error occurred: {http_err}"}
