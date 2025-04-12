@@ -1,7 +1,7 @@
 from flask import current_app
 from extensions import socketio
 from models import db
-from models import Notification
+from models.notification import Notification
 from utils.send_sms import SendSms
 
 class Notify():
@@ -32,10 +32,11 @@ class Notify():
             receiver_sid = current_app.cache.get(f"user_sid:{user_id}")
             if receiver_sid:
                 # Emit to receiver
-                socketio.emit('new_sms', {
+                socketio.emit('new_notification', {
                     'notification_id': notification.id,
                     'user_id': user_id,
-                    'message': notification.message
+                    'message': notification.message,
+                    'source': notification.source
                 }, room=receiver_sid)
 
                 print(f"notification sent to user {user_id} connected to {receiver_sid}")
@@ -53,6 +54,6 @@ class Notify():
 
     def _get_user_phone(self, user_id):
         # Lazy import to avoid circular dependencies
-        from models import User
+        from models.user import User
         user = User.query.filter_by(id=user_id).first()
         return user.phone if user else None
