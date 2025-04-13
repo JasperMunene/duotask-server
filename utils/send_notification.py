@@ -3,7 +3,8 @@ from extensions import socketio
 from models import db
 from models.notification import Notification
 from utils.send_sms import SendSms
-
+from models.push_subscription import PushSubscription
+from utils.send_push import SendPush
 class Notify():
     def __init__(self, user_id, message, source, is_important=False):
         self.user_id = str(user_id)
@@ -51,6 +52,17 @@ class Notify():
                     print(f"Important notification: SMS sent to {phone_number}")
                 else:
                     print("Phone number not found for user")
+            
+            # send push notification
+            subs = PushSubscription.query.filter_by(user_id=user_id).all()
+            if not subs:
+                print("user hasn't subscribed to notification")
+            
+            for sub in subs:
+                device_token = sub.token
+                message_title = "New notification"
+                message_body = message
+                SendPush(device_token, message_title, message_body).send_push()
 
     def _get_user_phone(self, user_id):
         # Lazy import to avoid circular dependencies

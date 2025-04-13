@@ -19,6 +19,7 @@ from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
 from resources.user_wallet_resource import UserWalletResource
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
+from resources.push_notification import SubscribePush
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
@@ -49,7 +50,10 @@ def create_app():
         CELERY_TIMEZONE = 'UTC',
         CELERY_ENABLE_UTC = True,
         CACHE_DEFAULT_TIMEOUT=300,
-        PROFILE_CACHE_TTL=300
+        PROFILE_CACHE_TTL=300,
+        VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY"),
+        VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY"),
+        VAPID_CLAIMS = os.getenv("VAPID_CLAIMS")
     )
 
     # Initialize extensions
@@ -129,6 +133,7 @@ def create_app():
     api.add_resource(UserWalletResource, "/wallet")
     api.add_resource(MpesaC2BResource, '/api/payment/mpesa/initate/<int:user_id>')
     api.add_resource(MpesaCallbackResource, '/api/payment/mpesa/call_back')
+    api.add_resource(SubscribePush, '/notification/subscribe')
     return app
 
 if __name__ == '__main__':

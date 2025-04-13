@@ -68,3 +68,10 @@ class User(db.Model, SerializerMixin):
         backref='related_user',
         cascade="all, delete-orphan"
     )
+    
+    push_relation = db.relationship(
+        'PushSubscription',
+        foreign_keys='PushSubscription.user_id',
+        backref='user',
+        cascade="all, delete-orphan"
+    )
