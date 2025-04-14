@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 class WalletTransaction(db.Model, SerializerMixin):
     __tablename__ = 'wallet_transactions'
 
-    ledgeidr_id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
     wallet_id = db.Column(db.Integer, db.ForeignKey('wallets.wallet_id'), nullable=False)
     transaction_type = db.Column(db.String(50))
     amount = db.Column(db.Numeric(18, 2))
