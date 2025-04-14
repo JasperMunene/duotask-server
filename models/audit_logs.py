@@ -1,5 +1,7 @@
 from . import db
 from sqlalchemy_serializer import SerializerMixin
+from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError
 
 class AuditLog(db.Model, SerializerMixin):
     __tablename__ = 'audit_logs'
@@ -18,3 +20,15 @@ class AuditLog(db.Model, SerializerMixin):
     wallet = db.relationship('Wallet', backref='audit_logs')
     transaction = db.relationship('Transaction', backref='audit_logs')
     escrow = db.relationship('Escrow', backref='audit_logs')
+
+
+# 🚫 Prevent updates to AuditLog rows
+@event.listens_for(AuditLog, "before_update", propagate=True)
+def prevent_update(mapper, connection, target):
+    raise IntegrityError(None, None, "AuditLog records are immutable and cannot be updated.")
+
+
+# 🚫 Prevent deletes to AuditLog rows
+@event.listens_for(AuditLog, "before_delete", propagate=True)
+def prevent_delete(mapper, connection, target):
+    raise IntegrityError(None, None, "AuditLog records are immutable and cannot be deleted.")

@@ -1,5 +1,7 @@
 from . import db
 from sqlalchemy_serializer import SerializerMixin
+from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError
 
 class WalletTransaction(db.Model, SerializerMixin):
     __tablename__ = 'wallet_transactions'
@@ -14,3 +16,15 @@ class WalletTransaction(db.Model, SerializerMixin):
     reference_id = db.Column(db.String(255))
 
     wallet = db.relationship('Wallet', backref='transactions')
+
+
+# 🚫 Prevent updates to WalletTransaction rows
+@event.listens_for(WalletTransaction, "before_update", propagate=True)
+def prevent_wallet_txn_update(mapper, connection, target):
+    raise IntegrityError(None, None, "WalletTransaction records are immutable and cannot be updated.")
+
+
+# 🚫 Prevent deletes to WalletTransaction rows
+@event.listens_for(WalletTransaction, "before_delete", propagate=True)
+def prevent_wallet_txn_delete(mapper, connection, target):
+    raise IntegrityError(None, None, "WalletTransaction records are immutable and cannot be deleted.")
