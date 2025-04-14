@@ -1,7 +1,7 @@
 from . import db
 from sqlalchemy_serializer import SerializerMixin
 from sqlalchemy import Index
-
+from utils.encryption import encrypt_data, decrypt_data
 
 # ---------------------------------------------------------------------------
 #  Profiles
@@ -21,6 +21,16 @@ class UserInfo(db.Model, SerializerMixin):
     bio = db.Column(db.Text, nullable=True, comment="User's biography")
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
-
+    _mpesa_number = db.Column("mpesa_number", db.String(255), nullable=True)
     # Relationship with User
     user = db.relationship("User", backref=db.backref("user_info", uselist=False, cascade="all, delete-orphan"))
+    
+    
+    # encrypt mpesa_number
+    @property
+    def mpesa_number(self):
+        return decrypt_data(self._mpesa_number) if self._mpesa_number else None
+
+    @mpesa_number.setter
+    def mpesa_number(self, value):
+        self._mpesa_number = encrypt_data(value)
