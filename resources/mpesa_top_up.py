@@ -8,7 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 from models import db
-from models.user_wallet import UserWallet
+from models.user_wallet import Wallet
 # Load environment variables from .env file
 load_dotenv()
 
@@ -108,10 +108,10 @@ class MpesaCallbackResource(Resource):
             transaction_id = data.get("TransID")
             phone_number = data.get("MSISDN")
             amount = data.get("Amount")
-            wallet = UserWallet.query.filter_by(user_id=user_id).first()
+            wallet = Wallet.query.filter_by(user_id=user_id).first()
 
             if not wallet:
-                wallet = UserWallet(user_id=user_id)
+                wallet = Wallet(user_id=user_id)
             if wallet.balance is None:
                 wallet.balance = 0.0
 

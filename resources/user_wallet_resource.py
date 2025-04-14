@@ -4,7 +4,7 @@ from flask import request, current_app
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db
-from models.user_wallet import UserWallet
+from models.user_wallet import Wallet
 from models.user import User
 
 class UserWalletResource(Resource):
@@ -21,10 +21,10 @@ class UserWalletResource(Resource):
             return {"balance": cached_balance}, 200
         
         # If not in cache, get from database
-        wallet = UserWallet.query.filter_by(user_id=user_id).first()
+        wallet = Wallet.query.filter_by(user_id=user_id).first()
 
         if not wallet:
-            wallet = UserWallet(user_id=user_id)
+            wallet = Wallet(user_id=user_id)
             db.session.add(wallet)
             db.session.commit()
 
@@ -45,10 +45,10 @@ class UserWalletResource(Resource):
             return {"message": "Invalid amount"}, 400
 
         user_id = get_jwt_identity()
-        wallet = UserWallet.query.filter_by(user_id=user_id).first()
+        wallet = Wallet.query.filter_by(user_id=user_id).first()
 
         if not wallet:
-            wallet = UserWallet(user_id=user_id)
+            wallet = Wallet(user_id=user_id)
         if wallet.balance is None:
             wallet.balance = 0.0
 
@@ -76,7 +76,7 @@ class UserWalletResource(Resource):
             return {"message": "Invalid amount"}, 400
 
         user_id = get_jwt_identity()
-        wallet = UserWallet.query.filter_by(user_id=user_id).first()
+        wallet = Wallet.query.filter_by(user_id=user_id).first()
 
         if not wallet or wallet.balance < amount:
             return {"message": "Insufficient balance"}, 400

@@ -26,3 +26,11 @@ from models.review import Review
 from models.conversation import Conversation
 from models.message import Message
 from models.push_subscription import PushSubscription
+from models.audit_logs import AuditLog
+from models.currencies import Currency
+from models.escrow_actions import EscrowAction
+from models.escrow import Escrow
+from models.fees import Fee
+from models.platform_wallet import PlatformWallet
+from models.transactions import Transaction
+from models.user_wallet import Wallet
