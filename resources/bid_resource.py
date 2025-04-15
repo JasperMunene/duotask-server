@@ -2,12 +2,13 @@ from flask_restful import Resource, reqparse, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
 from werkzeug.exceptions import HTTPException
-from sqlalchemy import asc, desc
-from sqlalchemy.orm import joinedload
+from sqlalchemy import asc, desc, func, case
+from sqlalchemy.orm import joinedload, Session
 from models import db
 from models.task import Task
 from models.bid import Bid
 from models.user import User
+from utils.completion_rate import UserCompletionRateCalculator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -42,13 +43,11 @@ class BidsResource(Resource):
     @jwt_required()
     def get(self, task_id):
         current_user_id = get_jwt_identity()
-        # Ensure identity is an int (if you store ints in JWT)
         try:
             current_user_id = int(current_user_id)
         except (TypeError, ValueError):
             abort(403, message="Invalid user identity")
 
-        # Load task
         task = db.session.get(Task, task_id)
         if not task or task.is_deleted:
             abort(404, message="Task not found")
@@ -57,7 +56,6 @@ class BidsResource(Resource):
             abort(403, message="Unauthorized access to bids")
 
         args = self.parser.parse_args()
-
         cache_key = f"task_bids_{task_id}_{args}"
         cached = current_app.cache.get(cache_key)
         if cached:
@@ -68,15 +66,16 @@ class BidsResource(Resource):
             .filter_by(task_id=task_id)
             .options(joinedload(Bid.user).joinedload(User.user_info))
         )
-
         query = self._apply_filters(query, args)
         query = self._apply_sorting(query, args)
-
         paginated = query.paginate(
             page=args['page'], per_page=args['per_page'], error_out=False
         )
 
-        bids = [self._serialize_bid(b) for b in paginated.items]
+        # Instantiate the completion rate calculator once for this request.
+        rate_calculator = UserCompletionRateCalculator(min_tasks=20)
+
+        bids = [self._serialize_bid(bid, rate_calculator) for bid in paginated.items]
 
         response = {
             'bids': bids,
@@ -87,7 +86,6 @@ class BidsResource(Resource):
                 'total_items': paginated.total
             }
         }
-
         current_app.cache.set(cache_key, response, timeout=300)
         return response
 
@@ -108,8 +106,12 @@ class BidsResource(Resource):
             return query.order_by(order_fn(Bid.created_at))
         return query.order_by(order_fn(Bid.updated_at))
 
-    def _serialize_bid(self, bid):
+    def _serialize_bid(self, bid, rate_calculator: UserCompletionRateCalculator):
+        """
+        Serialize a bid and include the bidder's Bayesian-adjusted completion rate.
+        """
         ui = bid.user.user_info or None
+        completion_rate = rate_calculator.calculate_rate(bid.user.id)
         return {
             'id': bid.id,
             'amount': float(bid.amount),
@@ -121,8 +123,7 @@ class BidsResource(Resource):
                 'id': bid.user.id,
                 'name': bid.user.name,
                 'image': bid.user.image,
-                # 'rating': ui.rating if ui else 0.0,
-                # 'completed_tasks': ui.completed_tasks if ui else 0
+                'completion_rate': completion_rate
             }
         }
 

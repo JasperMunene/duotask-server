@@ -5,8 +5,15 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f5cf8742-d2bf-481c-b10d-96ae5fada099" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/resources/review_resource.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/utils/completion_rate.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/conversation.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/conversation.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/message.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/message.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/notification.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/notification.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/review.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/review.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/user_relation.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/user_relation.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/resources/bid_resource.py" beforeDir="false" afterPath="$PROJECT_DIR$/resources/bid_resource.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -32,18 +39,18 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python tests.Python tests for test_auth_flow.TestSignupResource.executor": "Debug",
-    "Python tests.Python tests for test_auth_flow.TestSignupResource.test_successful_signup.executor": "Run",
-    "Python tests.Python tests for test_auth_flow.TestVerifyOTPResource.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "/home/jasper-munene/Desktop/gig-backend",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python tests.Python tests for test_auth_flow.TestSignupResource.executor&quot;: &quot;Debug&quot;,
+    &quot;Python tests.Python tests for test_auth_flow.TestSignupResource.test_successful_signup.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests for test_auth_flow.TestVerifyOTPResource.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/jasper-munene/Desktop/gig-backend&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager" selected="Python tests.Python tests for test_auth_flow.TestVerifyOTPResource">
     <configuration name="Python tests for test_auth_flow.TestSignupResource" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
       <module name="gig-backend" />
