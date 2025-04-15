@@ -7,6 +7,9 @@ from sqlalchemy_serializer import SerializerMixin
 # ---------------------------------------------------------------------------
 class Review(db.Model, SerializerMixin):
     __tablename__ = 'reviews'
+    __table_args__ = (
+        db.Index('ix_reviews_reviewee_id', 'reviewee_id'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
 

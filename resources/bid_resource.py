@@ -9,6 +9,7 @@ from models.task import Task
 from models.bid import Bid
 from models.user import User
 from utils.completion_rate import UserCompletionRateCalculator
+from utils.user_rating import UserRatingCalculator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -73,9 +74,11 @@ class BidsResource(Resource):
         )
 
         # Instantiate the completion rate calculator once for this request.
-        rate_calculator = UserCompletionRateCalculator(min_tasks=20)
+        comp_rate_calc = UserCompletionRateCalculator(min_tasks=20)
+        # For rating, create a rating calculator.
+        rating_calc = UserRatingCalculator()
 
-        bids = [self._serialize_bid(bid, rate_calculator) for bid in paginated.items]
+        bids = [self._serialize_bid(bid, comp_rate_calc, rating_calc) for bid in paginated.items]
 
         response = {
             'bids': bids,
@@ -106,12 +109,13 @@ class BidsResource(Resource):
             return query.order_by(order_fn(Bid.created_at))
         return query.order_by(order_fn(Bid.updated_at))
 
-    def _serialize_bid(self, bid, rate_calculator: UserCompletionRateCalculator):
+    def _serialize_bid(self, bid, comp_rate_calc: UserCompletionRateCalculator, rating_calc: UserRatingCalculator):
         """
-        Serialize a bid and include the bidder's Bayesian-adjusted completion rate.
+        Serialize a bid and include both the bidder's Bayesian-adjusted completion rate and rating information.
         """
         ui = bid.user.user_info or None
-        completion_rate = rate_calculator.calculate_rate(bid.user.id)
+        completion_rate = comp_rate_calc.calculate_rate(bid.user.id)
+        rating_result = rating_calc.get_user_rating(bid.user.id)
         return {
             'id': bid.id,
             'amount': float(bid.amount),
@@ -123,7 +127,9 @@ class BidsResource(Resource):
                 'id': bid.user.id,
                 'name': bid.user.name,
                 'image': bid.user.image,
-                'completion_rate': completion_rate
+                'completion_rate': completion_rate,
+                'rating': rating_result.final_rating,
+                'rating_users': rating_result.num_ratings
             }
         }
 

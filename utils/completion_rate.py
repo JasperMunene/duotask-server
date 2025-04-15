@@ -94,8 +94,3 @@ class UserCompletionRateCalculator:
         bayesian_rate = numerator / denominator
 
         return round(bayesian_rate * 100, 1)
-
-# Example usage:
-# calc = UserCompletionRateCalculator(min_tasks=20)
-# rate = calc.calculate_rate(user_id=123)
-# print(f"User Bayesian completion rate: {rate}%")

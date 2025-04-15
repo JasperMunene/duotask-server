@@ -1,12 +1,4 @@
-from models import db
-from models.user import User
-from models.user_info import UserInfo
-from models.category import Category
-from models.task import Task
-from models.bid import Bid
-from models.task_assignment import TaskAssignment
-from models.task_location import TaskLocation
-from models.review import Review
+from models import User, UserInfo, Category, Task, Bid, TaskAssignment, TaskLocation, Review, db
 from app import app
 from datetime import datetime, timedelta
 import random
@@ -22,6 +14,8 @@ def clear_tables():
     Task.query.delete()                 # Then delete tasks.
     UserInfo.query.delete()             # Delete user infos.
     Category.query.delete()             # Delete categories.
+    # Also delete user relations if they exist (adjust if necessary)
+    # UserRelation.query.delete()
     User.query.delete()                 # Finally, delete users.
     db.session.commit()
 
@@ -237,8 +231,44 @@ def make_task_assignments():
     db.session.commit()
     print(f"Created {len(assignments)} task assignments.")
 
+def make_reviews():
+    """
+    Create reviews for users. Specifically, add several reviews for Bob Smith (the second user)
+    to ensure his rating is computed based on diverse data.
+    """
+    users = User.query.all()
+    # Assume Bob Smith is at index 1.
+    bob = users[1]
+    # Get task assignments where Bob is the task doer.
+    task_assignments = TaskAssignment.query.filter_by(task_doer=bob.id).all()
+    reviews = []
+    if task_assignments:
+        # Create a review for each task assignment.
+        for ta in task_assignments:
+            review = Review(
+                task_assignment_id=ta.id,
+                reviewer_id=ta.task.user_id,  # The task giver is the reviewer.
+                reviewee_id=bob.id,
+                rating=random.uniform(3.0, 5.0),  # Ratings between 3 and 5.
+                comment=random.choice(["Great work!", "Satisfactory job.", "Excellent performance!", "Could be improved."])
+            )
+            reviews.append(review)
+    else:
+        # If Bob has no task assignments, add a dummy review.
+        review = Review(
+            task_assignment_id=1,
+            reviewer_id=users[0].id,
+            reviewee_id=bob.id,
+            rating=4.5,
+            comment="Excellent performance!"
+        )
+        reviews.append(review)
+    db.session.bulk_save_objects(reviews)
+    db.session.commit()
+    print(f"Created {len(reviews)} reviews.")
+
 def make_task_locations():
-    # Create locations for physical tasks only
+    # Create locations for physical tasks only.
     tasks = Task.query.filter_by(work_mode="physical").all()
     locations = []
     for task in tasks:
@@ -266,6 +296,7 @@ def make_all_data():
     make_tasks()
     make_bids()
     make_task_assignments()
+    make_reviews()         # Added: create reviews (especially for Bob Smith)
     make_task_locations()
 
 if __name__ == '__main__':
