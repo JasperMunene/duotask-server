@@ -62,8 +62,8 @@ class MpesaPaymentResource(Resource):
         user_id = get_jwt_identity()
 
         mpesa_number = data.get("mpesa_number")
+        currency = data.get("currency", "KES")
         otp = data.get("otp")
-        mobile_number = data.get("mobile_number")
 
         if not is_valid_mpesa_number(mpesa_number):
             return {"error": "Invalid M-Pesa number format."}, 400
@@ -84,6 +84,7 @@ class MpesaPaymentResource(Resource):
         # Update the details (if needed)
         detail.mpesa_number = mpesa_number
         detail.date_modified = db.func.now()
+        detail.currency = currency
         detail.default_method="mpesa",
         detail.mpesa_otp = None  # Optional: if you want to track verified status
 
@@ -101,7 +102,7 @@ class CardPaymentResource(Resource):
     def post(self):
         data = request.get_json()
         user_id = get_jwt_identity()
-
+        currency = data.get("currency", "KES")
         # Check if the user already has card details
         existing_detail = PaymentDetail.query.filter_by(user_id=user_id).first()
 
@@ -122,6 +123,7 @@ class CardPaymentResource(Resource):
         # Create new card payment details
         detail = PaymentDetail(
             user_id=user_id,
+            currency = currency,
             default_method="card",
             card_number=data.get("card_number"),
             name_holder=data.get("name_holder"),
@@ -162,24 +164,55 @@ class CardPaymentResource(Resource):
                     "cvc": "",  # optionally blank for security
                     "expirery": existing_detail.expirery
                 }}, 200
-
 class ChangeDefault(Resource):
-    @jwt_required
+    @jwt_required()
     def put(self):
-        user_id = get_jwt_identity
+        user_id = get_jwt_identity()  # ✅ add parentheses to call the function
         data = request.get_json()
         default_method = data.get("default_method")
-        
+
+        # Optional: Validate input method
+        if default_method not in ["mpesa", "card"]:
+            return {"message": "Invalid default method. Must be 'mpesa' or 'card'."}, 400
+
         payment_details = PaymentDetail.query.filter_by(user_id=user_id).first()
-        
+
         if not payment_details:
-            return {"message" : "no payment detail found"}, 404
-        
+            return {"message": "No payment detail found"}, 404
+
         payment_details.default_method = default_method
         db.session.commit()
-        
-        return {"message": f"default changed to {default_method}"}, 200
 
+        return {"message": f"Default changed to {payment_details.default_method}"}, 200
+
+class CurrencyDetails(Resource):
+    @jwt_required()
+    def put(self):
+        user_id = get_jwt_identity()  # fixed here
+        data = request.get_json()
+        currency = data.get('currency')
+
+        if currency not in ['KES', 'UGX', 'USD']:
+            return {"message": "Invalid currency used"}, 400
+
+        payment_details = PaymentDetail.query.filter_by(user_id=user_id).first()
+        if not payment_details:
+            return {"message": "No payment detail found"}, 404
+
+        payment_details.currency = currency
+        db.session.commit()
+        return {"message": f"Currency updated to {currency}"}
+
+    @jwt_required()
+    def get(self):
+        user_id = get_jwt_identity()
+        payment_details = PaymentDetail.query.filter_by(user_id=user_id).first()
+        if not payment_details:
+            return {"message": "No payment detail found"}, 404
+
+        return {"currency": payment_details.currency} if payment_details.currency else {"currency": "KES"}
+        
+        
 class GetGateways(Resource):
     @jwt_required()
     def get(self):
@@ -196,31 +229,25 @@ class GetGateways(Resource):
         default_method = None
 
         for detail in details:
-            if detail.default_method == "mpesa":
-                mpesa_details.append({
+            card_details.append({
+                    "card_number": detail.card_number,
+                    "name_holder": detail.name_holder,
+                    "cvc": "",  # optionally blank for security
+                    "expirery": detail.expirery
+                })
+            
+            mpesa_details.append({
                     "mpesa_number": detail.mpesa_number
                 })
-                default_method = "mpesa"
-
-            elif detail.default_method == "card":
-                card_details.append({
-                    "card_number": detail.card_number,
-                    "name_holder": detail.name_holder,
-                    "cvc": "",  # optionally blank for security
-                    "expirery": detail.expirery
-                })
-                default_method = "card"
-                
-            if detail.card_number != None:
-                card_details.append({
-                    "card_number": detail.card_number,
-                    "name_holder": detail.name_holder,
-                    "cvc": "",  # optionally blank for security
-                    "expirery": detail.expirery
-                })
-
+            default_method = detail.default_method
+            if detail.currency:
+                currency = detail.currency
+            else:
+                currency = "KES"
         return {
             "default_method": default_method,
             "mpesa_details": mpesa_details,
-            "card_details": card_details
+            "card_details": card_details,
+            "currency": currency
         }
+

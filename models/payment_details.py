@@ -20,7 +20,7 @@ class PaymentDetail(db.Model, SerializerMixin):
     expirery = db.Column(db.String(10), nullable=True)  # Format: MM/YY or YYYY-MM
     
     mpesa_otp = db.Column(db.Integer, nullable=True)
-
+    currency = db.Column(db.String(10), nullable = True)
     date_added = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
     date_modified = db.Column(db.DateTime(timezone=True), onupdate=db.func.now())
     # Optional: relationship to user model
