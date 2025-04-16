@@ -56,9 +56,7 @@ class UserProfileResource(Resource):
         new_info = UserInfo(
             user_id=user_id,
             tagline=data['tagline'],
-            bio=data['bio'],
-            rating=data.get("rating", 0.0),
-            completion_rate=data.get("completion_rate", 0.0)
+            bio=data['bio']
         )
 
         db.session.add(new_info)

@@ -139,10 +139,10 @@ class LoginResource(Resource):
         user = User.query.filter_by(email=args['email']).first()
 
         if not user:
-            return {"message": "Invalid credentials"}, 401
+            return {"message": "No user with that email credentials"}, 401
 
         if not bcrypt.check_password_hash(user.password, args['password']):
-            return {"message": "Invalid credentials"}, 401
+            return {"message": "Incorrect password"}, 401
 
         if not user.is_verified:
             return {"message": "Account not verified"}, 403

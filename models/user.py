@@ -75,3 +75,5 @@ class User(db.Model, SerializerMixin):
         backref='user',
         cascade="all, delete-orphan"
     )
+
+    payment_details = db.relationship("PaymentDetail", back_populates="user", cascade="all, delete")

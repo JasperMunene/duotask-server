@@ -4,13 +4,37 @@ import os
 
 class SendSms:
     def __init__(self, phone, message):
-        self.phone = str(phone)
+        # Normalize the phone number
+        self.phone = self.format_phone_number(phone)
         self.message = message
+
+    def format_phone_number(self, phone):
+        # Ensure phone is a string
+        phone = str(phone).strip()
+
+        # If phone starts with '0', remove the '0' and prepend '254'
+        if phone.startswith('0'):
+            formatted_phone = f'254{phone[1:]}'
+        # If phone starts with '+254', remove the '+' and leave the rest
+        elif phone.startswith('+254'):
+            formatted_phone = f'254{phone[4:]}'
+        # If phone starts with '254', leave it as is
+        elif phone.startswith('254'):
+            formatted_phone = phone
+        # Handle local numbers starting with '7' or '01'
+        elif phone.startswith('7') and len(phone) == 9:  # local number like 712345678
+            formatted_phone = f'254{phone}'
+        elif phone.startswith('1') and len(phone) == 9:  # local number like 0123456789
+            formatted_phone = f'254{phone}'
+        else:
+            raise ValueError("Invalid phone number format. Ensure it's either +254, 254, or starts with 0.")
+
+        return formatted_phone
 
     def post(self):
         # Remove leading zero(s) from phone number
-        formatted_phone = self.phone.lstrip('0')
-        full_phone = f'254{formatted_phone}'
+        formatted_phone = self.phone
+        full_phone = formatted_phone
 
         # URL for SMS portal
         url = "https://smsportal.hostpinnacle.co.ke/SMSApi/send"

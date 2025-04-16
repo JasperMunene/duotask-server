@@ -29,8 +29,8 @@ class UserInfo(db.Model, SerializerMixin):
     # encrypt mpesa_number
     @property
     def mpesa_number(self):
-        return decrypt_data(self._mpesa_number) if self._mpesa_number else None
+        return decrypt_data(self.mpesa_number) if self.mpesa_number else None
 
     @mpesa_number.setter
     def mpesa_number(self, value):
-        self._mpesa_number = encrypt_data(value)
+        self.mpesa_number = encrypt_data(value)
