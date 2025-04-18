@@ -21,13 +21,14 @@ from resources.user_wallet_resource import UserWalletResource
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from resources.push_notification import SubscribePush
 from resources.payment_details import MpesaNumber
-from resources.payment_resources import GetGateways, MpesaPaymentResource, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
+from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
 from socket_events import handle_connect, handle_disconnect, handle_message_read, handle_mark_all_delivered, handle_send_message, handle_typing
 import threading
 from utils.send_notification import Notify
+from utils.payment import GetFunds
 
 load_dotenv()
 
@@ -142,6 +143,7 @@ def create_app():
     api.add_resource(VerifyNumber, '/payment/mpesa/verify')
     api.add_resource(ChangeDefault, '/payment/change_default')
     api.add_resource(CurrencyDetails, '/payment/currency')
+    api.add_resource(TestMpesa, '/payment/test')
     return app
 
 if __name__ == '__main__':                                                                                                                          

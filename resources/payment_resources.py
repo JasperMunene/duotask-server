@@ -7,6 +7,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 import re
 from utils.send_sms import SendSms
 import random
+from utils.send_notification import Notify
 
 
 def is_valid_mpesa_number(number):
@@ -89,6 +90,7 @@ class MpesaPaymentResource(Resource):
         detail.mpesa_otp = None  # Optional: if you want to track verified status
 
         db.session.commit()
+        Notify(user_id, message = f"Mpesa number was updates successfully to {detail.mpesa_number}", source="wallet").post()
 
         return {"message": "M-Pesa number verified and details updated.", 
                 "payment": {
@@ -108,16 +110,11 @@ class CardPaymentResource(Resource):
 
         # If the user already has card details, return an error
         if existing_detail:
-            existing_detail.card_number = data.get("card_number", existing_detail.card_number)
-            existing_detail.name_holder = data.get("name_holder", existing_detail.name_holder)
-            existing_detail.cvc = data.get("cvc", existing_detail.cvc)
-            existing_detail.expirery = data.get("expirery", existing_detail.expirery)
+            existing_detail.card_token = data.get("card_number", existing_detail.card_token)
             db.session.commit()
+            Notify(user_id, message = f"Card details updated successfull", source="wallet").post()
             return {"message": "Card details updated successfull", "details": {
-                    "card_number": existing_detail.card_number,
-                    "name_holder": existing_detail.name_holder,
-                    "cvc": "",  # optionally blank for security
-                    "expirery": existing_detail.expirery
+                    "card_token": existing_detail.card_token
                 } }, 201
 
         # Create new card payment details
@@ -125,19 +122,14 @@ class CardPaymentResource(Resource):
             user_id=user_id,
             currency = currency,
             default_method="card",
-            card_number=data.get("card_number"),
-            name_holder=data.get("name_holder"),
-            cvc=data.get("cvc"),
-            expirery=data.get("expirery")
+            card_token=data.get("card_token")
         )
 
         db.session.add(detail)
         db.session.commit()
+        Notify(user_id, message = f"Card details were added successfull", source="wallet").post()
         return {"message": "Card details added successfull", "details": {
-                    "card_number": detail.card_number,
-                    "name_holder": detail.name_holder,
-                    "cvc": "",  # optionally blank for security
-                    "expirery": detail.expirery
+                    "card_token": detail.card_token,
                 } }, 201
 
     @jwt_required()
@@ -152,17 +144,11 @@ class CardPaymentResource(Resource):
             return {"message": "No existing card details found. Please use POST to create new details."}, 404
 
         # Update the card details
-        existing_detail.card_number = data.get("card_number", existing_detail.card_number)
-        existing_detail.name_holder = data.get("name_holder", existing_detail.name_holder)
-        existing_detail.cvc = data.get("cvc", existing_detail.cvc)
-        existing_detail.expirery = data.get("expirery", existing_detail.expirery)
+        existing_detail.card_token = data.get("card_token", existing_detail.card_token)
 
         db.session.commit()
         return {"message":"card edited successfull", "details": {
-                    "card_number": existing_detail.card_number,
-                    "name_holder": existing_detail.name_holder,
-                    "cvc": "",  # optionally blank for security
-                    "expirery": existing_detail.expirery
+                    "card_token": existing_detail.card_token
                 }}, 200
 class ChangeDefault(Resource):
     @jwt_required()
@@ -182,7 +168,7 @@ class ChangeDefault(Resource):
 
         payment_details.default_method = default_method
         db.session.commit()
-
+        Notify(user_id, message = f"You changed your default payment method to {default_method}", source="wallet").post()
         return {"message": f"Default changed to {payment_details.default_method}"}, 200
 
 class CurrencyDetails(Resource):
@@ -201,6 +187,7 @@ class CurrencyDetails(Resource):
 
         payment_details.currency = currency
         db.session.commit()
+        Notify(user_id, message = f"Currency updated to {currency}", source="wallet").post()
         return {"message": f"Currency updated to {currency}"}
 
     @jwt_required()
@@ -230,10 +217,7 @@ class GetGateways(Resource):
 
         for detail in details:
             card_details.append({
-                    "card_number": detail.card_number,
-                    "name_holder": detail.name_holder,
-                    "cvc": "",  # optionally blank for security
-                    "expirery": detail.expirery
+                    "card_token": detail.card_token
                 })
             
             mpesa_details.append({
@@ -250,4 +234,15 @@ class GetGateways(Resource):
             "card_details": card_details,
             "currency": currency
         }
+        
+class TestMpesa(Resource):
+    @jwt_required()
+    def post(self):
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        amount = data.get('amount')
+        transaction_id = data.get('transaction_id')
+        from utils.payment import GetFunds
+        GetFunds(user_id, amount, transaction_id).post()
 
+        return {"message": "posted"}, 200

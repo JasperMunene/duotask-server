@@ -14,10 +14,7 @@ class PaymentDetail(db.Model, SerializerMixin):
     mpesa_number = db.Column(db.String(20), nullable=True)
     
     # Card details
-    card_number = db.Column(db.String(20), nullable=True)
-    name_holder = db.Column(db.String(100), nullable=True)
-    cvc = db.Column(db.String(10), nullable=True)
-    expirery = db.Column(db.String(10), nullable=True)  # Format: MM/YY or YYYY-MM
+    card_token = db.Column(db.String(255), nullable=True)
     
     mpesa_otp = db.Column(db.Integer, nullable=True)
     currency = db.Column(db.String(10), nullable = True)
