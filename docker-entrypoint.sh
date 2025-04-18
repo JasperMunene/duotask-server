@@ -14,13 +14,13 @@ if [ "$1" = "web" ]; then
         app:app
 elif [ "$1" = "celery" ]; then
     echo "Starting Celery worker..."
-    exec celery -A tasks.celery worker \
+    exec celery -A workers.tasks.celery worker \
         --loglevel=info \
         --concurrency=4 \
-        --queues=ai_tasks,default
+        --queues=ai_tasks,notifications,default
 elif [ "$1" = "celery-beat" ]; then
     echo "Starting Celery beat..."
-    exec celery -A tasks.celery beat \
+    exec celery -A workers.tasks.celery beat \
         --loglevel=info \
         --pidfile=
 else

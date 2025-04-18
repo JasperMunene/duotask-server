@@ -248,7 +248,7 @@ class TaskResource(Resource):
 
             # Enqueue background task for AI categorization
             current_app.celery.send_task(
-                'tasks.categorize_task',
+                'workers.tasks.categorize_task',
                 args=(task.id,),
                 queue='ai_tasks'
             )

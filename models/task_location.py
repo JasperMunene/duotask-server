@@ -8,6 +8,8 @@ class TaskLocation(db.Model, SerializerMixin):
     """TaskLocation model storing physical location details for tasks."""
     __tablename__ = 'task_locations'
 
+    serialize_rules = ('-task',)
+
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete="CASCADE"), unique=True, nullable=False, comment="Associated task")
     latitude = db.Column(db.Numeric(9, 6), nullable=False, comment="Latitude coordinate")

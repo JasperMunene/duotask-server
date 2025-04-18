@@ -5,6 +5,10 @@ from models.notification import Notification
 from utils.send_sms import SendSms
 from models.push_subscription import PushSubscription
 from utils.send_push import SendPush
+import logging
+
+logger = logging.getLogger(__name__)
+
 class Notify():
     def __init__(self, user_id, message, source, is_important=False):
         self.user_id = str(user_id)
@@ -40,23 +44,23 @@ class Notify():
                     'source': notification.source
                 }, room=receiver_sid)
 
-                print(f"notification sent to user {user_id} connected to {receiver_sid}")
+                logger.info(f"notification sent to user {user_id} connected to {receiver_sid}")
             else:
-                print(f"user {user_id} not online to be notified")
+                logger.info(f"user {user_id} not online to be notified")
 
             # Send SMS if important
             if is_important:
                 phone_number = self._get_user_phone(user_id)
                 if phone_number:
                     SendSms(phone_number, message).post()
-                    print(f"Important notification: SMS sent to {phone_number}")
+                    logger.info(f"Important notification: SMS sent to {phone_number}")
                 else:
-                    print("Phone number not found for user")
+                    logger.info("Phone number not found for user")
             
             # send push notification
             subs = PushSubscription.query.filter_by(user_id=user_id).all()
             if not subs:
-                print("user hasn't subscribed to notification")
+                logger.info("user hasn't subscribed to notification")
             
             for sub in subs:
                 device_token = sub.token
