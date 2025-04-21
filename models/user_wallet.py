@@ -12,6 +12,7 @@ class Wallet(db.Model, SerializerMixin):
     currency = db.Column(db.String(10))
     status = db.Column(db.String(20))
     collection_ref = db.Column(db.String(50))
+    disbursment_ref = db.Column(db.String(50))
     created_at = db.Column(db.DateTime)
     updated_at = db.Column(db.DateTime)
 

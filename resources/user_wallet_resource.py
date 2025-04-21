@@ -53,8 +53,6 @@ class UserWalletResource(Resource):
             wallet.balance = 0.0
 
         wallet.balance += amount
-
-        wallet.balance += amount
         db.session.add(wallet)
         db.session.commit()
 

@@ -246,3 +246,16 @@ class TestMpesa(Resource):
         GetFunds(user_id, amount, transaction_id).post()
 
         return {"message": "posted"}, 200
+
+class TestPay(Resource):
+    @jwt_required()
+    def post(self):
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        amount = data.get('amount')
+        transaction_id = data.get('transaction_id')
+        from utils.payment import SendFunds
+        SendFunds(user_id, amount, transaction_id).post()
+    
+        return {"message": "posted"}, 200
+
