@@ -59,6 +59,7 @@ httplib2
 httpx
 idna
 iniconfig
+intasend-python
 itsdangerous
 Jinja2
 kombu

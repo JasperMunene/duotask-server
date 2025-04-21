@@ -8,6 +8,13 @@ class TaskAssignment(db.Model, SerializerMixin):
     """TaskAssignment model recording which bid was accepted and the task assignment details."""
     __tablename__ = 'task_assignments'
 
+    serialize_rules = (
+        '-task',  # Don't serialize the parent task when serializing an assignment
+        '-giver',  # Avoid serializing the full User object for the giver
+        '-doer',  # Avoid serializing the full User object for the doer
+        '-bid',  # Avoid serializing the related Bid object completely
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete="CASCADE"), nullable=False)
     task_giver = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False, comment="User who posted the task")

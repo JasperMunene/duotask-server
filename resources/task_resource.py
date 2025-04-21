@@ -15,6 +15,7 @@ from models.task_assignment import TaskAssignment
 from datetime import datetime
 import math
 import logging
+from utils.user_rating import UserRatingCalculator
 
 
 logger = logging.getLogger(__name__)
@@ -164,30 +165,40 @@ class TaskResource(Resource):
         return query.order_by(Task.created_at.desc())
 
     def _serialize_task(self, task, args):
-        serialized = task.to_dict()
-        serialized['location'] = task.location.to_dict() if task.location else None
-        serialized['categories'] = [c.to_dict() for c in task.categories]
+        # 1) explicitly pick just the Task columns you need
+        serialized = task.to_dict(
+            only=(
+                'id',
+                'title',
+                'description',
+                'budget',
+                'status',
+                'schedule_type',
+                'specific_date',
+                'deadline_date',
+                'created_at',
+                'updated_at',
+            )
+        )
 
-        # Aggregate ratings from reviews_received (assuming the User model has a 'reviews_received' relationship)
-        user = task.user
-        user_reviews = getattr(user, 'reviews_received', [])
-        if user_reviews:
-            avg_rating = sum(review.rating for review in user_reviews) / len(user_reviews)
+        # 2) pull in exactly the fields you want from location
+        if task.location:
+            serialized['location'] = task.location.to_dict(
+                only=('id', 'city', 'latitude', 'longitude')
+            )
         else:
-            avg_rating = 0.0
+            serialized['location'] = None
 
-        serialized['user'] = {
-            'name': user.name,
-            'rating': avg_rating
-        }
+        # 3) same for categories
+        serialized['categories'] = [
+            c.to_dict(only=('id', 'name')) for c in task.categories
+        ]
 
-        # Add preferred time range with start and end times
+        # 4) your preferred_time + distance logic stays the same…
         serialized['preferred_time'] = {
             'start': str(task.preferred_start_time) if task.preferred_start_time else None,
             'end': str(task.preferred_end_time) if task.preferred_end_time else None,
         }
-
-        # Add distance calculation if coordinates provided
         if args['lat'] and args['lon'] and task.location:
             serialized['distance'] = haversine(
                 args['lat'], args['lon'],
@@ -445,37 +456,76 @@ class SingleTaskResource(Resource):
         return serialized
 
     def _serialize_task(self, task):
-        # Calculate average rating from reviews_received
+        # 1) Compute average rating
         user_reviews = task.user.reviews_received if task.user else []
-        avg_rating = (sum(review.rating for review in user_reviews) / len(user_reviews)
-                      if user_reviews else 0.0)
+        avg_rating = (
+            sum(r.rating for r in user_reviews) / len(user_reviews)
+            if user_reviews else 0.0
+        )
 
-        response = {
-            "task": task.to_dict(rules=(
-                '-user.tasks',
-                '-location.tasks',
-                '-categories.tasks',
-                '-images.task'
-            )),
-            "location": task.location.to_dict() if task.location else None,
-            "categories": [c.to_dict() for c in task.categories],
-            "images": [img.to_dict() for img in task.images],
-            "user": {
-                "id": task.user.id,
-                "name": task.user.name,
-                "rating": avg_rating,
-                "completed_tasks": getattr(task.user, "completed_tasks_count", 0),
-                "avatar": task.user.image
-            },
-            "metadata": {
-                "views": self._get_task_views(task.id),
-                "popularity_score": self._calculate_popularity(task)
-            }
+        # 2) Task fields (only the columns you need)
+        task_data = task.to_dict(only=(
+            'id',
+            'title',
+            'description',
+            'budget',
+            'status',
+            'schedule_type',
+            'specific_date',
+            'deadline_date',
+            'preferred_start_time',
+            'preferred_end_time',
+            'created_at',
+            'updated_at',
+        ))
+
+        # 3) Location (only its own fields)
+        if task.location:
+            location_data = task.location.to_dict(only=(
+                'id', 'city', 'latitude', 'longitude'
+            ))
+        else:
+            location_data = None
+
+        # 4) Categories (id & name only)
+        categories_data = [
+            c.to_dict(only=('id', 'name'))
+            for c in task.categories
+        ]
+
+        # 5) Images (pick only the fields you actually expose)
+        images_data = [
+            img.to_dict(only=('id', 'image_url'))
+            for img in task.images
+        ]
+
+        # 6) Assemble user info manually
+        user_data = {
+            'id': task.user.id,
+            'name': task.user.name,
+            'rating': avg_rating,
+            'completed_tasks': getattr(task.user, 'completed_tasks_count', 0),
+            'avatar': task.user.image
         }
 
-        # If a distance attribute is present, include it
+        # 7) Metadata
+        metadata = {
+            'views': self._get_task_views(task.id),
+            'popularity_score': self._calculate_popularity(task)
+        }
+
+        # 8) Build and return
+        response = {
+            'task': task_data,
+            'location': location_data,
+            'categories': categories_data,
+            'images': images_data,
+            'user': user_data,
+            'metadata': metadata
+        }
+
         if hasattr(task, 'distance'):
-            response["distance"] = task.distance
+            response['distance'] = task.distance
 
         return response
 

@@ -5,6 +5,11 @@ from datetime import datetime
 class UserRelation(db.Model, SerializerMixin):
     __tablename__ = 'user_relations'
 
+    serialize_rules = (
+        '-user',
+        '-related_user',
+    )
+
     id = db.Column(db.Integer, primary_key=True)
 
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)  # Initiator

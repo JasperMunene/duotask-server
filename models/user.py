@@ -15,7 +15,8 @@ class User(db.Model, SerializerMixin):
         '-password', '-otp_code', '-reset_token', '-reset_expires_at',
         '-conversations_as_giver', '-conversations_as_doer',
         '-messages_as_sender', '-messages_as_reciever',
-        '-relations', '-related_to'
+        '-relations', '-related_to',
+        '-tasks'
     )
 
     id = db.Column(db.Integer, primary_key=True)

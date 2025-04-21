@@ -5,14 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f5cf8742-d2bf-481c-b10d-96ae5fada099" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/gig-backend.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/gig-backend.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-entrypoint.sh" beforeDir="false" afterPath="$PROJECT_DIR$/docker-entrypoint.sh" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/task_location.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/task_location.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/category.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/category.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/task_assignment.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/task_assignment.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/task_image.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/task_image.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/user.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/user.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/models/user_relation.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/user_relation.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/resources/task_resource.py" beforeDir="false" afterPath="$PROJECT_DIR$/resources/task_resource.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tasks.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/send_notification.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/send_notification.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -26,6 +26,17 @@
       </list>
     </option>
   </component>
+  <component name="FlaskConsoleOptions" custom-start-script="import sys; print('Python %s on %s' % (sys.version, sys.platform)); sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo, NoAppException&#10;for module in [&quot;main.py&quot;, &quot;wsgi.py&quot;, &quot;app.py&quot;]:&#10;    try: locals().update(ScriptInfo(app_import_path=module, create_app=None).load_app().make_shell_context()); print(&quot;\nFlask App: %s&quot; % app.import_name); break&#10;    except NoAppException: pass">
+    <envs>
+      <env key="FLASK_APP" value="app" />
+    </envs>
+    <option name="myCustomStartScript" value="import sys; print('Python %s on %s' % (sys.version, sys.platform)); sys.path.extend([WORKING_DIR_AND_PYTHON_PATHS])&#10;from flask.cli import ScriptInfo, NoAppException&#10;for module in [&quot;main.py&quot;, &quot;wsgi.py&quot;, &quot;app.py&quot;]:&#10;    try: locals().update(ScriptInfo(app_import_path=module, create_app=None).load_app().make_shell_context()); print(&quot;\nFlask App: %s&quot; % app.import_name); break&#10;    except NoAppException: pass" />
+    <option name="myEnvs">
+      <map>
+        <entry key="FLASK_APP" value="app" />
+      </map>
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -37,24 +48,30 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python tests.Python tests for test_auth_flow.TestSignupResource.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.Python tests for test_auth_flow.TestSignupResource.test_successful_signup.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests for test_auth_flow.TestVerifyOTPResource.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/jasper-munene/Desktop/gig-backend&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python tests.Python tests for test_auth_flow.TestSignupResource.executor": "Debug",
+    "Python tests.Python tests for test_auth_flow.TestSignupResource.test_successful_signup.executor": "Run",
+    "Python tests.Python tests for test_auth_flow.TestVerifyOTPResource.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "/home/jasper-munene/Desktop/flask-and-paystack",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMThirdPartyAiProvidersConfigurable",
+    "vue.rearranger.settings.migration": "true"
+  },
+  "keyToStringList": {
+    "DatabaseDriversLRU": [
+      "redis",
+      "postgresql"
+    ]
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected="Python tests.Python tests for test_auth_flow.TestVerifyOTPResource">
     <configuration name="Python tests for test_auth_flow.TestSignupResource" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
       <module name="gig-backend" />
@@ -131,7 +148,11 @@
       <workItem from="1744784478191" duration="9594000" />
       <workItem from="1744796643750" duration="2582000" />
       <workItem from="1744904016149" duration="5098000" />
-      <workItem from="1744958384217" duration="2391000" />
+      <workItem from="1744958384217" duration="9859000" />
+      <workItem from="1745081885497" duration="1201000" />
+      <workItem from="1745145622426" duration="94000" />
+      <workItem from="1745147769151" duration="4050000" />
+      <workItem from="1745206812518" duration="13983000" />
     </task>
     <servers />
   </component>
