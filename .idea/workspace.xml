@@ -5,14 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f5cf8742-d2bf-481c-b10d-96ae5fada099" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/resources/assignment_resource.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/category.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/category.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/task_assignment.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/task_assignment.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/task_image.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/task_image.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/user.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/user.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/models/user_relation.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/user_relation.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/resources/task_resource.py" beforeDir="false" afterPath="$PROJECT_DIR$/resources/task_resource.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -152,7 +147,7 @@
       <workItem from="1745081885497" duration="1201000" />
       <workItem from="1745145622426" duration="94000" />
       <workItem from="1745147769151" duration="4050000" />
-      <workItem from="1745206812518" duration="13983000" />
+      <workItem from="1745206812518" duration="16029000" />
     </task>
     <servers />
   </component>

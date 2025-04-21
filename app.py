@@ -20,7 +20,7 @@ from resources.user_relation_resource import UserRelations
 from resources.user_wallet_resource import UserWalletResource
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from resources.push_notification import SubscribePush
-from resources.payment_details import MpesaNumber
+from resources.assignment_resource import TaskAssignResource
 from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
 from datetime import timedelta
 from flask_socketio import SocketIO
@@ -128,6 +128,7 @@ def create_app():
     api.add_resource(UserProfileResource, '/user/profile')
     api.add_resource(TaskResource, '/tasks')
     api.add_resource(SingleTaskResource, '/tasks/<int:task_id>')
+    api.add_resource(TaskAssignResource, '/tasks/<int:task_id>/assign')
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
     api.add_resource(OlderMessages, '/messages/<int:conversation_id>')
 
