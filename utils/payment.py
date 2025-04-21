@@ -1,6 +1,6 @@
 from flask import current_app
 
-from utils.gateways.intasend_stk_push import Intasend_Stk
+from utils.gateways.paystack_mpesa_collect import Mpesa_collect
 from models.payment_details import PaymentDetail
 from models.user import User
 class GetFunds:
@@ -19,7 +19,7 @@ class GetFunds:
         
         mpesa_details = payment_info.get("mpesa_details")
         default_method = payment_info.get("default_method")
-        first_name = payment_info.get('first_name')
+        email = payment_info.get('email')
         currency = payment_info.get('currency')
         
         if not mpesa_details or not mpesa_details[0].get("mpesa_number"):
@@ -30,15 +30,15 @@ class GetFunds:
         # You can now proceed with fund collection logic
         if default_method == "mpesa":
             # print(first_name)
-            Intasend_Stk(user_id, transaction_id, mpesa_number, amount, currency, first_name).post_push()
+            Mpesa_collect(user_id, transaction_id, mpesa_number, amount, currency, email).post_push()
 
     def _get_user_payment_info(self, user_id):
        
         user = User.query.get(user_id)
         if not user:
-            first_name = "User"
+            email = "User"
         else:
-            first_name = user.name.split()[0]
+            email = user.email
         details = PaymentDetail.query.filter_by(user_id=user_id).all()
 
         card_details = []
@@ -61,7 +61,7 @@ class GetFunds:
             if detail.currency:
                 currency = detail.currency
         return {
-            "first_name": first_name,
+            "email": email,
             "currency": currency,
             "default_method": default_method,
             "mpesa_details": mpesa_details,

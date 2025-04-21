@@ -5,6 +5,9 @@ from models.conversation import Conversation
 from models.message import Message
 from models import db
 from utils.send_notification import Notify
+import logging
+logger = logging.getLogger()
+
 @socketio.on('connect')
 def handle_connect():
     """Handle user connections and notify relevant users efficiently."""
@@ -16,12 +19,12 @@ def handle_connect():
             redis = current_app.redis
             cache.set(f"user_sid:{user_id}", request.sid, timeout=0)
             redis.sadd("online_users", user_id)  # Track online user
-            print(f"[+] User {user_id} connected with SID {request.sid}")
+            logger.info(f"[+] User {user_id} connected with SID {request.sid}")
 
         user = User.query.get(user_id)
         if user:
             user.update_status("online")
-            print(f"[✓] User {user_id} status set to online")
+            logger.info(f"[✓] User {user_id} status set to online")
 
             conversations = Conversation.query.filter(
                 (Conversation.task_giver == user_id) | (Conversation.task_doer == user_id)
@@ -33,23 +36,23 @@ def handle_connect():
             }
 
             if not other_user_ids:
-                print(f"[ℹ️] User {user_id} has no conversation participants")
+                logger.info(f"[ℹ️] User {user_id} has no conversation participants")
                 return
 
             other_users = User.query.filter(User.id.in_(other_user_ids)).all()
             online_users = [user for user in other_users if user.status == "online"]
 
             if not online_users:
-                print(f"[ℹ️] No online users to notify about user {user_id}'s connection")
+                logger.info(f"[ℹ️] No online users to notify about user {user_id}'s connection")
                 return
 
             for u in online_users:
                 sid = cache.get(f"user_sid:{str(u.id)}")
                 if sid:
                     socketio.emit('user_connected', {'user_id': user_id}, room=sid)
-                    print(f"[📢] Notified user {u.id} (SID: {sid}) that user {user_id} is online")
+                    logger.info(f"[📢] Notified user {u.id} (SID: {sid}) that user {user_id} is online")
                 else:
-                    print(f"[🚫] User {u.id} is online in DB but not connected via socket")
+                    logger.info(f"[🚫] User {u.id} is online in DB but not connected via socket")
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -62,12 +65,12 @@ def handle_disconnect():
         
         if online_users is None:
             online_users = []  # Initialize as an empty list if it's not found in cache
-        print(f"Current online users: {online_users}")
+        logger.info(f"Current online users: {online_users}")
 
         # Iterate over all online users
         for user_id in online_users:
             sid = current_app.cache.get(f"user_sid:{user_id}")
-            print(f"Checking user {user_id}, SID: {sid} against request SID: {request.sid}")
+            logger.info(f"Checking user {user_id}, SID: {sid} against request SID: {request.sid}")
             if sid == request.sid:
                 disconnected_user_id = user_id
                 # Remove the user's SID from the cache
@@ -75,24 +78,24 @@ def handle_disconnect():
                 # Remove the user ID from the online_users list in the cache
                 # online_users.remove(user_id)
                 current_app.redis.srem("online_users", user_id)  # Save the updated list back in the cache
-                print(f"Updated online users: {online_users}")
+                logger.info(f"Updated online users: {online_users}")
                 break
 
     if not disconnected_user_id:
-        print("[⚠️] Could not find disconnected user in session list")
+        logger.info("[⚠️] Could not find disconnected user in session list")
         return
 
-    print(f"[-] User {disconnected_user_id} disconnected with SID {request.sid}")
+    logger.info(f"[-] User {disconnected_user_id} disconnected with SID {request.sid}")
 
     user = User.query.get(disconnected_user_id)
     if user:
         user.update_status("offline")
-        print(f"[✓] User {disconnected_user_id} status set to offline")
+        logger.info(f"[✓] User {disconnected_user_id} status set to offline")
 
         conversations = Conversation.query.filter(
             (Conversation.task_giver == disconnected_user_id) | (Conversation.task_doer == disconnected_user_id)
         ).all()
-        print(f"Conversations found for user {disconnected_user_id}: {conversations}")
+        logger.info(f"Conversations found for user {disconnected_user_id}: {conversations}")
 
         other_user_ids = {
             str(convo.task_doer) if str(convo.task_giver) == disconnected_user_id else str(convo.task_giver)
@@ -100,24 +103,24 @@ def handle_disconnect():
         }
 
         if not other_user_ids:
-            print(f"[ℹ️] User {disconnected_user_id} had no conversation participants")
+            logger.info(f"[ℹ️] User {disconnected_user_id} had no conversation participants")
             return
 
         other_users = User.query.filter(User.id.in_(other_user_ids)).all()
         online_users = [u for u in other_users if u.status == "online"]
-        print(f"Online users to notify: {online_users}")
+        logger.info(f"Online users to notify: {online_users}")
 
         if not online_users:
-            print(f"[ℹ️] No online users to notify about user {disconnected_user_id}'s disconnection")
+            logger.info(f"[ℹ️] No online users to notify about user {disconnected_user_id}'s disconnection")
             return
 
         for u in online_users:
             sid = current_app.cache.get(f"user_sid:{str(u.id)}")
             if sid:
                 socketio.emit('user_disconnected', {'user_id': disconnected_user_id}, room=sid)
-                print(f"[📢] Notified user {u.id} (SID: {sid}) that user {disconnected_user_id} went offline")
+                logger.info(f"[📢] Notified user {u.id} (SID: {sid}) that user {disconnected_user_id} went offline")
             else:
-                print(f"[🚫] User {u.id} is online in DB but not connected via socket")
+                logger.info(f"[🚫] User {u.id} is online in DB but not connected via socket")
 
 @socketio.on('send_message')
 def handle_send_message(data):
@@ -182,7 +185,7 @@ def handle_send_message(data):
                 'success': True
             }, room=sender_sid)
 
-    print(f"📨 Message from {sender_id} to {receiver_id}: {message_text} | Status: {status}")
+    logger.info(f"📨 Message from {sender_id} to {receiver_id}: {message_text} | Status: {status}")
     
 
 @socketio.on('message_status')
@@ -219,12 +222,12 @@ def handle_message_read(data):
                     'message_id': message_id,
                     'status': status
                 }, room=sender_sid)
-                print(f"Message {message_id} status updated to {status} for sender {sender_id}")
+                logger.info(f"Message {message_id} status updated to {status} for sender {sender_id}")
             else:
-                print(f"Sender {sender_id} is not online (SID not found)")
+                logger.info(f"Sender {sender_id} is not online (SID not found)")
 
     except Exception as e:
-        print(f"Error updating status: {e}")
+        logger.info(f"Error updating status: {e}")
         db.session.rollback()
 
 
@@ -261,7 +264,7 @@ def handle_typing(data):
                 }, room=other_user_sid)
     
     except Exception as e:
-        print(f"Error with typing indicator: {e}")
+        logger.info(f"Error with typing indicator: {e}")
 
 
 @socketio.on('mark_conversation_read')
@@ -298,5 +301,5 @@ def handle_mark_all_delivered():
                 }, room=sender_sid)
 
     except Exception as e:
-        print(f"Error marking conversation as read: {e}")
+        logger.info(f"Error marking conversation as read: {e}")
         db.session.rollback()
