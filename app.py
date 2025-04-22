@@ -23,6 +23,7 @@ from resources.push_notification import SubscribePush
 from resources.assignment_resource import TaskAssignResource
 from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, TestPay, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
 from resources.paystack_call_back import Paystack_callback
+from resources.review_resource import ReviewListResource, ReviewResource
 from datetime import timedelta
 from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
@@ -148,6 +149,8 @@ def create_app():
     api.add_resource(TestMpesa, '/payment/test/collect')
     api.add_resource(TestPay, '/payment/test/pay')
     api.add_resource(Paystack_callback, '/payment/paystack/callback')
+    api.add_resource(ReviewListResource, '/reviews')
+    api.add_resource(ReviewResource, '/reviews/<int:review_id>')
     return app
 
 if __name__ == '__main__':                                                                                                                          
