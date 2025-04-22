@@ -13,7 +13,7 @@ from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource
-from resources.task_resource import TaskResource, SingleTaskResource
+from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
 from resources.conversation_resource import ConversationResource, OlderMessages
 from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
@@ -24,18 +24,17 @@ from resources.assignment_resource import TaskAssignResource
 from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, TestPay, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
 from resources.paystack_call_back import Paystack_callback
 from datetime import timedelta
-from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
-from socket_events import handle_connect, handle_disconnect, handle_message_read, handle_mark_all_delivered, handle_send_message, handle_typing
 import threading
-from utils.send_notification import Notify
-from utils.payment import GetFunds
 
+# Load environment variables from .env file
 load_dotenv()
 
 def create_app():
+    """Factory function to create and configure the Flask application."""
     app = Flask(__name__)
-    # Configure app
+
+    # Application configuration
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY"),
         RESEND_API_KEY=os.getenv("RESEND_API_KEY"),
@@ -44,60 +43,61 @@ def create_app():
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=24),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         FRONTEND_URL=os.getenv("FRONTEND_URL", "http://localhost:3000"),
+
+        # Caching config
         CACHE_TYPE="RedisCache",
         CACHE_REDIS_URL=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        CACHE_DEFAULT_TIMEOUT=300,
+        PROFILE_CACHE_TTL=300,
+
+        # Celery config
         CELERY_BROKER_URL=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
         CELERY_RESULT_BACKEND=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
         CELERY_TASK_SERIALIZER='json',
-        CELERY_RESULT_SERIALIZER = 'json',
-        CELERY_ACCEPT_CONTENT = ['json'],
-        CELERY_TIMEZONE = 'UTC',
-        CELERY_ENABLE_UTC = True,
-        CACHE_DEFAULT_TIMEOUT=300,
-        PROFILE_CACHE_TTL=300,
-        VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY"),
-        VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY"),
-        VAPID_CLAIMS = os.getenv("VAPID_CLAIMS")
+        CELERY_RESULT_SERIALIZER='json',
+        CELERY_ACCEPT_CONTENT=['json'],
+        CELERY_TIMEZONE='UTC',
+        CELERY_ENABLE_UTC=True,
+
+        # Web Push Notification Keys
+        VAPID_PRIVATE_KEY=os.getenv("VAPID_PRIVATE_KEY"),
+        VAPID_PUBLIC_KEY=os.getenv("VAPID_PUBLIC_KEY"),
+        VAPID_CLAIMS=os.getenv("VAPID_CLAIMS")
     )
 
-    # Initialize extensions
-    bcrypt.init_app(app)
-    db.init_app(app)
-    jwt = JWTManager(app)
-    socketio.init_app(app, cors_allowed_origins="*")  # Configure CORS for Socket.IO
+    # Initialize core extensions
+    bcrypt.init_app(app)                # Password hashing
+    db.init_app(app)                    # Database connection
+    jwt = JWTManager(app)              # JWT authentication
+    socketio.init_app(app, cors_allowed_origins="*")  # Real-time communication
 
-    # Configure Flask-Caching
+    # Initialize caching and Redis
     cache = Cache(app)
     app.cache = cache
+    app.redis = redis.Redis.from_url(app.config["CACHE_REDIS_URL"], decode_responses=True)
 
-    # Configure Redis connection
-    app.redis = redis.Redis.from_url(
-        app.config["CACHE_REDIS_URL"],
-        decode_responses=True
-    )
-
-    # Set up a lock for category creation to prevent race conditions
+    # Lock to prevent race conditions (e.g. when creating categories)
     app.category_lock = threading.Lock()
 
-    # Initialize Celery
+    # Configure Celery for background tasks
     celery = Celery(app.import_name)
     celery.conf.update(app.config)
-    CELERYD_PREFETCH_MULTIPLIER=1,
     app.celery = celery
 
-    # Enable CORS
+    # Enable CORS for cross-origin requests
     CORS(app)
 
-    # Database migrations
+    # Database migrations setup
     migrate = Migrate(app, db)
 
-    # Initialize OAuth
+    # Initialize OAuth (Google in this case)
     oauth = OAuth(app)
     google_oauth = GoogleOAuth(oauth, app.config['FRONTEND_URL'])
 
-    # Setup API resources
+    # Initialize API and route definitions
     api = Api(app)
 
+    # Custom task base class to allow Flask context in Celery tasks
     class ContextTask(celery.Task):
         def __call__(self, *args, **kwargs):
             with app.app_context():
@@ -105,6 +105,7 @@ def create_app():
 
     celery.Task = ContextTask
 
+    # Health check endpoint for Redis
     class HealthCheck(Resource):
         def get(self):
             try:
@@ -113,32 +114,41 @@ def create_app():
             except redis.ConnectionError:
                 return {"status": "healthy", "redis": "disconnected"}, 200
 
-    # Register resources
+    # Register all API resources (routes)
     api.add_resource(HealthCheck, '/health')
     api.add_resource(UserHealthResource, '/health/user')
+
+    # Auth routes
     api.add_resource(SignupResource, '/auth/signup')
     api.add_resource(VerifyOTPResource, '/auth/verify-otp')
     api.add_resource(LoginResource, '/auth/login')
     api.add_resource(GoogleLogin, '/auth/login/google', resource_class_args=[google_oauth])
-    api.add_resource(GoogleAuthorize, '/auth/authorize/google',
-                     endpoint='authorize_google',
-                     resource_class_args=[google_oauth])
+    api.add_resource(GoogleAuthorize, '/auth/authorize/google', endpoint='authorize_google', resource_class_args=[google_oauth])
     api.add_resource(ResendOTPResource, '/auth/resend-otp')
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
+
+    # User routes
     api.add_resource(UserProfileResource, '/user/profile')
+
+    # Task routes
     api.add_resource(TaskResource, '/tasks')
     api.add_resource(SingleTaskResource, '/tasks/<int:task_id>')
+    api.add_resource(TaskStatusResource, '/tasks/<int:task_id>/status')
     api.add_resource(TaskAssignResource, '/tasks/<int:task_id>/assign')
+
+    # Messaging and conversation routes
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
     api.add_resource(OlderMessages, '/messages/<int:conversation_id>')
 
+    # Bidding and user relation routes
     api.add_resource(BidsResource, '/tasks/<int:task_id>/bids')
     api.add_resource(UserRelations, '/user-relations', '/user-relations/<int:other_user_id>')
+
+    # Wallet and payments
     api.add_resource(UserWalletResource, "/wallet")
     api.add_resource(MpesaC2BResource, '/payment/mpesa/initate/<int:user_id>')
     api.add_resource(MpesaCallbackResource, '/api/payment/mpesa/call_back')
-    api.add_resource(SubscribePush, '/notification/subscribe')
     api.add_resource(GetGateways, '/payment/gateways')
     api.add_resource(MpesaPaymentResource, '/payment/mpesa')
     api.add_resource(CardPaymentResource, '/payment/card')
@@ -148,9 +158,14 @@ def create_app():
     api.add_resource(TestMpesa, '/payment/test/collect')
     api.add_resource(TestPay, '/payment/test/pay')
     api.add_resource(Paystack_callback, '/payment/paystack/callback')
+
+    # Push notification route
+    api.add_resource(SubscribePush, '/notification/subscribe')
+
     return app
 
-if __name__ == '__main__':                                                                                                                          
+# Run the app using Flask-SocketIO if this file is run directly
+if __name__ == '__main__':
     app = create_app()
     socketio.run(
         app,
@@ -159,4 +174,5 @@ if __name__ == '__main__':
         debug=os.getenv('DEBUG', 'False').lower() == 'true'
     )
 else:
+    # For environments like WSGI servers
     app = create_app()
