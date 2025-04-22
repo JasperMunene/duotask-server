@@ -15,7 +15,7 @@ from models.task_assignment import TaskAssignment
 from datetime import datetime
 import math
 import logging
-from utils.user_rating import UserRatingCalculator
+from werkzeug.exceptions import HTTPException
 
 
 logger = logging.getLogger(__name__)
@@ -901,3 +901,222 @@ class SingleTaskResource(Resource):
 
         except Exception as cache_error:
             logger.error(f"Cache invalidation error: {str(cache_error)}")
+
+
+class TaskStatusResource(Resource):
+    """
+    Resource for updating the status of a single task.
+    Supports only validated state transitions and enforces
+    business rules around assignment and side-effects.
+    """
+    # Parser to validate incoming JSON payload
+    parser = reqparse.RequestParser()
+    parser.add_argument(
+        'status',
+        type=str,
+        required=True,
+        choices=['in_progress', 'completed', 'cancelled'],
+        help="Invalid status. Allowed: in_progress, completed, cancelled"
+    )
+
+    @jwt_required()
+    def put(self, task_id):
+        """
+        HTTP PUT /tasks/<task_id>/status
+        1. Authenticate user
+        2. Load & lock task row
+        3. Validate transition & business rules
+        4. Persist new status & timestamp
+        5. Commit and trigger cache invalidation + notifications
+        """
+        # 1. Validate JWT identity
+        try:
+            current_user_id = int(get_jwt_identity())
+        except (TypeError, ValueError):
+            abort(403, message="Invalid user identity")
+
+        # 2. Parse and validate input
+        args = self.parser.parse_args()
+        new_status = args['status']
+
+        try:
+            # Use a nested transaction so we can rollback on validation failures
+            with db.session.begin_nested():
+                # Acquire row-level lock to prevent concurrent updates
+                task = (
+                    db.session.query(Task)
+                              .filter_by(id=task_id, is_deleted=False)
+                              .with_for_update()
+                              .first()
+                )
+                if not task:
+                    abort(404, message="Task not found")
+                if task.user_id != current_user_id:
+                    abort(403, message="Unauthorized to update this task")
+
+                current_status = task.status
+
+                # 3a. State machine validation
+                self._validate_transition(current_status, new_status)
+                # 3b. Business-rule validation (assignment state)
+                self._validate_business_rules(task, new_status)
+
+                # 4. Apply status change
+                task.status = new_status
+                task.updated_at = datetime.utcnow()
+
+                # 5. Handle side-effects (bids, assignment, stats)
+                self._handle_status_side_effects(task, new_status)
+
+            # Commit DB changes
+            db.session.commit()
+
+            # After commit: clear caches & enqueue notifications
+            self._invalidate_caches(task_id)
+            self._send_notifications(task, current_status, new_status)
+
+            return {
+                'message': 'Task status updated successfully',
+                'task_id': task_id,
+                'new_status': new_status
+            }, 200
+
+        except HTTPException:
+            # Re-raise HTTP errors (abort)
+            db.session.rollback()
+            raise
+        except Exception as e:
+            # Log & return 500 on unexpected failures
+            db.session.rollback()
+            logger.error(f"Status update failed for task {task_id}: {e}", exc_info=True)
+            abort(500, message="Internal server error during status update")
+
+    def _validate_transition(self, current_status, new_status):
+        """
+        Ensure that new_status is a valid next step from current_status.
+        Uses a simple state machine map.
+        """
+        valid_transitions = {
+            'open':         ['in_progress', 'cancelled'],
+            'in_progress':  ['completed', 'cancelled'],
+            'completed':    [],
+            'cancelled':    []
+        }
+        allowed = valid_transitions.get(current_status, [])
+        if new_status not in allowed:
+            abort(400, message=f"Invalid transition: {current_status} → {new_status}")
+
+    def _validate_business_rules(self, task, new_status):
+        """
+        Enforce domain-specific rules before allowing transition:
+          - Must be assigned before moving to in_progress
+          - Must be in_progress before moving to completed
+        """
+        assignment = TaskAssignment.query.filter_by(task_id=task.id).first()
+
+        if new_status == 'in_progress':
+            if not assignment or assignment.status != 'assigned':
+                abort(409, message="Task must be assigned before starting progress")
+        elif new_status == 'completed':
+            if not assignment or assignment.status != 'in_progress':
+                abort(409, message="Task must be in progress before completing")
+
+    def _handle_status_side_effects(self, task, new_status):
+        """
+        Update related models when status changes:
+          - Reject pending bids on cancellation
+          - Update assignment and user stats
+        """
+        assignment = TaskAssignment.query.filter_by(task_id=task.id).first()
+
+        if new_status == 'cancelled':
+            # Reject any pending or accepted bids
+            (
+                Bid.query
+                   .filter_by(task_id=task.id)
+                   .filter(Bid.status.in_(['pending', 'accepted']))
+                   .update({'status': 'rejected'}, synchronize_session=False)
+            )
+            # Mark assignment cancelled
+            if assignment:
+                assignment.status = 'cancelled'
+                db.session.add(assignment)
+            # Increment owner's cancelled count
+            self._update_user_stats(task, action='cancelled')
+
+        elif new_status == 'completed':
+            # Mark assignment completed
+            if assignment:
+                assignment.status = 'completed'
+                db.session.add(assignment)
+            # Increment doer's completed count
+            self._update_user_stats(task, action='completed')
+
+        elif new_status == 'in_progress':
+            # Mark assignment in_progress
+            if assignment:
+                assignment.status = 'in_progress'
+                db.session.add(assignment)
+
+    def _update_user_stats(self, task, action):
+        """
+        Atomically update user statistics based on action:
+          - 'completed': increment doer’s completed_tasks_count
+          - 'cancelled': increment owner’s cancelled_tasks_count
+        """
+        if action == 'completed':
+            assign = TaskAssignment.query.filter_by(task_id=task.id).first()
+            if assign:
+                User.query.filter_by(id=assign.task_doer).update(
+                    {User.completed_tasks_count: User.completed_tasks_count + 1}
+                )
+        elif action == 'cancelled':
+            User.query.filter_by(id=task.user_id).update(
+                {User.cancelled_tasks_count: User.cancelled_tasks_count + 1}
+            )
+
+    def _invalidate_caches(self, task_id):
+        """
+        Remove stale cache entries after status change:
+         - task detail
+         - any paginated task lists
+        """
+        try:
+            redis_cli = current_app.redis
+            redis_cli.delete(f"task_{task_id}")
+            for key in redis_cli.scan_iter("tasks_*"):
+                redis_cli.delete(key)
+        except Exception as e:
+            logger.error(f"Cache invalidation failed: {e}")
+
+    def _send_notifications(self, task, old_status, new_status):
+        """
+        Enqueue notifications via Celery based on new_status:
+          - On completion, notify owner & queue rating reminders
+          - On cancellation, notify doer
+        """
+        try:
+            assign = TaskAssignment.query.filter_by(task_id=task.id).first()
+            if not assign:
+                return
+
+            if new_status == 'completed':
+                current_app.celery.send_task(
+                    'notifications.task_completed',
+                    args=(task.user_id, assign.task_doer, task.id),
+                    queue='notifications'
+                )
+                current_app.celery.send_task(
+                    'workers.ratings.queue_rating_reminders',
+                    args=(task.id,),
+                    queue='background'
+                )
+            elif new_status == 'cancelled':
+                current_app.celery.send_task(
+                    'notifications.task_cancelled',
+                    args=(assign.task_doer, task.id),
+                    queue='notifications'
+                )
+        except Exception as e:
+            logger.error(f"Notification enqueue failed: {e}")
+

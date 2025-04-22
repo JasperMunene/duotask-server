@@ -25,6 +25,8 @@ class User(db.Model, SerializerMixin):
     password = db.Column(db.String(255), nullable=True)
     phone = db.Column(db.String(15), comment="Stored in E.164 format")
     image = db.Column(db.String(255), nullable=True, comment="URL to profile image")
+    completed_tasks_count = db.Column(db.Integer, default=0)
+    cancelled_tasks_count = db.Column(db.Integer, default=0)
     otp_code = db.Column(db.String(6), nullable=True)
     otp_expires_at = db.Column(db.DateTime, nullable=True)
     otp_last_sent = db.Column(db.DateTime, nullable=True)
