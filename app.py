@@ -15,6 +15,7 @@ from resources.auth_resource import SignupResource, VerifyOTPResource, LoginReso
 from resources.user_resource import UserProfileResource, UserHealthResource
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
 from resources.conversation_resource import ConversationResource, OlderMessages
+from resources.feedback_resource import Feedback_resource
 from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
 from resources.user_wallet_resource import UserWalletResource
@@ -160,12 +161,14 @@ def create_app():
     api.add_resource(TestPay, '/payment/test/pay')
     api.add_resource(Paystack_callback, '/payment/paystack/callback')
     
-    # Review routs
-    api.add_resource(ReviewListResource, '/reviews')
+    # Review routes
+    api.add_resource(ReviewListResource, '/reviews', '/reviews/<int:user_id>')
     api.add_resource(ReviewResource, '/reviews/<int:review_id>')
     # Push notification route
     api.add_resource(SubscribePush, '/notification/subscribe')
 
+    # Feedback routes
+    api.add_resource(Feedback_resource, '/feedbacks') #post feedback, get /feedback?page={page}&limit={limit}
     return app
 
 # Run the app using Flask-SocketIO if this file is run directly

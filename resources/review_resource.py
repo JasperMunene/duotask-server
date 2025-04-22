@@ -7,7 +7,7 @@ from models.review import Review
 
 class ReviewListResource(Resource):
     @jwt_required()
-    def get(self):
+    def get(self, user_id):
         page = request.args.get('page', 1, type=int)
         limit = request.args.get('limit', 10, type=int)
         cache_key = f"reviews:page:{page}:limit:{limit}"
@@ -16,7 +16,7 @@ class ReviewListResource(Resource):
         if cached:
             return cached, 200
 
-        reviews_query = Review.query.order_by(Review.created_at.desc())
+        reviews_query = Review.query.filter_by(reviewee_id = user_id).order_by(Review.created_at.desc())
         paginated = reviews_query.paginate(page=page, per_page=limit, error_out=False)
 
         response = {

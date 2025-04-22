@@ -35,3 +35,4 @@ from models.platform_wallet import PlatformWallet
 from models.transactions import Transaction
 from models.user_wallet import Wallet
 from models.payment_details import PaymentDetail
+from models.feedback import Feedback
