@@ -24,6 +24,7 @@ click
 click-didyoumean
 click-plugins
 click-repl
+coverage
 cryptography
 Deprecated
 dotenv
@@ -34,6 +35,7 @@ flask-cors
 Flask-JWT-Extended
 Flask-Limiter
 Flask-Migrate
+flask-pytest
 Flask-RESTful
 Flask-SocketIO
 Flask-SQLAlchemy
@@ -87,6 +89,7 @@ Pygments
 PyJWT
 pyparsing
 pytest
+pytest-cov
 python-dateutil
 python-dotenv
 python-engineio
