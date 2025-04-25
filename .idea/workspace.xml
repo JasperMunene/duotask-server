@@ -6,7 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="f5cf8742-d2bf-481c-b10d-96ae5fada099" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -49,7 +48,7 @@
     "Python tests.Python tests for test_auth_flow.TestVerifyOTPResource.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "CR-4-Define-configure-test-settings-pytest-unittest-test-DB-test-client",
     "last_opened_file_path": "/home/jasper-munene/Desktop/flask-and-paystack",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -155,7 +154,7 @@
       <workItem from="1745398193105" duration="2376000" />
       <workItem from="1745421108935" duration="2169000" />
       <workItem from="1745493285677" duration="5546000" />
-      <workItem from="1745556847971" duration="1189000" />
+      <workItem from="1745556847971" duration="1852000" />
     </task>
     <servers />
   </component>
