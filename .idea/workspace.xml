@@ -5,6 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f5cf8742-d2bf-481c-b10d-96ae5fada099" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/tests/auth_tests/test_login.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -48,7 +49,7 @@
     "Python tests.Python tests for test_auth_flow.TestVerifyOTPResource.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "CR-4-Define-configure-test-settings-pytest-unittest-test-DB-test-client",
+    "git-widget-placeholder": "CR-11-LoginResource-POST-auth-login",
     "last_opened_file_path": "/home/jasper-munene/Desktop/flask-and-paystack",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
@@ -155,6 +156,8 @@
       <workItem from="1745421108935" duration="2169000" />
       <workItem from="1745493285677" duration="5546000" />
       <workItem from="1745556847971" duration="1852000" />
+      <workItem from="1745650168510" duration="8000" />
+      <workItem from="1745667222702" duration="3925000" />
     </task>
     <servers />
   </component>
