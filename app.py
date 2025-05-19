@@ -25,6 +25,7 @@ from resources.assignment_resource import TaskAssignResource
 from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, TestPay, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
 from resources.paystack_call_back import Paystack_callback
 from resources.review_resource import ReviewListResource, ReviewResource
+from resources.upload_media_resource import ImageUploadResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 import threading
@@ -129,7 +130,10 @@ def create_app():
     api.add_resource(ResendOTPResource, '/auth/resend-otp')
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
-
+    
+    # upload media resource 
+    api.add_resource(ImageUploadResource, '/api/media/upload')
+    
     # User routes
     api.add_resource(UserProfileResource, '/user/profile')
 

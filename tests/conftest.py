@@ -1,10 +1,11 @@
 import os, sys
-
+from unittest.mock import MagicMock
 # make sure the project root (where app.py lives) is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import pytest
-from app import create_app, db as _db
+from app import create_app
+from models import db
 
 TEST_DATABASE_URI = "sqlite:///:memory:"
 
@@ -24,7 +25,7 @@ def app():
 
     # create tables
     with app.app_context():
-        _db.create_all()
+        db.create_all()
         # if you use migrations:
         # upgrade()
 
@@ -32,7 +33,7 @@ def app():
 
     # teardown
     with app.app_context():
-        _db.drop_all()
+        db.drop_all()
 
 @pytest.fixture
 def client(app):
@@ -40,8 +41,29 @@ def client(app):
     return app.test_client()
 
 @pytest.fixture
-def db(app):
-    """An initialized database for each test."""
-    return _db
+def db(app):  # Use app-scoped db fixture
+    return db
 
+@pytest.fixture
+def mock_validate_email(monkeypatch):
+    mock = MagicMock(return_value=True)
+    monkeypatch.setattr("yourmodule.utils.validate_email", mock)
+    return mock
+
+@pytest.fixture
+def mock_send(monkeypatch):
+    mock = MagicMock()
+    monkeypatch.setattr("yourmodule.utils.send_email", mock)
+    return mock
+
+@pytest.fixture
+def mock_otp(monkeypatch):
+    monkeypatch.setattr("yourmodule.utils.generate_otp", lambda: "123456")
+    return "123456"
+
+@pytest.fixture
+def mock_logger(monkeypatch):
+    mock = MagicMock()
+    monkeypatch.setattr("yourmodule.utils.logger.error", mock)
+    return mock
 
