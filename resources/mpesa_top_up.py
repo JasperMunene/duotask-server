@@ -3,26 +3,29 @@ import base64
 import requests
 from flask import request, current_app, jsonify
 from flask_restful import Resource
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 from dotenv import load_dotenv
 import os
 from models import db
 from models.user_wallet import Wallet
+import re
+from decimal import Decimal
+
 # Load environment variables from .env file
 load_dotenv()
 
 # M-Pesa API credentials (loaded from .env file)
-MPESA_SHORTCODE = os.getenv("MPESA_SHORTCODE")
-MPESA_PASSKEY = os.getenv("MPESA_PASSKEY")
+MPESA_SHORTCODE = os.getenv("SAFARICOM_SANDBOX_SHORTCODE")
+MPESA_PASSKEY = os.getenv("SAFARICOM_SANDBOX_PASSKEY")
 
 # URL for Safaricom API
 MPESA_URL = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
 
 # Authentication headers
 MPESA_AUTH_URL = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
-MPESA_CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY")
-MPESA_CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET")
+MPESA_CONSUMER_KEY = os.getenv("SAFARICOM_SANDBOX_CONSUMER_KEY")
+MPESA_CONSUMER_SECRET = os.getenv("SAFARICOM_SANDBOX_CONSUMER_SECRET")
 
 # The URL M-Pesa will call with the payment status
 # CALLBACK_URL = os.getenv("CALLBACK_URL")
@@ -30,15 +33,38 @@ MPESA_CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET")
 class MpesaC2BResource(Resource):
     
     @jwt_required()
-    def post(self, user_id):
+    def post(self):
+        user_id = get_jwt_identity()
         """Initiate M-Pesa C2B Payment."""
         data = request.get_json()
         phone_number = data.get("phone_number")
         amount = data.get("amount")
-        call_back_url = f"https://bgrtfdl5-5000.uks1.devtunnels.ms/api/payment/mpesa/call_back?user_id={user_id}"
+        call_back_url = f"https://bgrtfdl5-5000.uks1.devtunnels.ms/payment/mpesa/call_back/{user_id}"
         if not phone_number or not amount:
             return {"message": "Missing phone number or amount"}, 400
 
+        def format_phone_number(number):
+            # Remove all non-digit characters
+            digits = re.sub(r'\D', '', number)
+
+            # Case 1: Starts with +254 or 254
+            if re.match(r'^254\d{9}$', digits):
+                return digits
+            if re.match(r'^254\d{9}$', '254' + digits[-9:]):
+                return '254' + digits[-9:]
+
+            # Case 2: Starts with 07 or 01 (local format)
+            if re.match(r'^0[17]\d{8}$', digits):
+                return '254' + digits[1:]
+
+            # Case 3: Already valid
+            if re.match(r'^254\d{9}$', digits):
+                return digits
+
+            # Invalid format
+            return None
+        
+        formated_number = format_phone_number(phone_number)
         # Generate the authorization token
         auth_token = self.get_mpesa_auth_token()
         if not auth_token:
@@ -61,12 +87,12 @@ class MpesaC2BResource(Resource):
             "Timestamp": timestamp,
             "TransactionType": "CustomerPayBillOnline",
             "Amount": amount,
-            "PartyA": phone_number,
+            "PartyA": formated_number,
             "PartyB": MPESA_SHORTCODE,
-            "PhoneNumber": phone_number,
+            "PhoneNumber": formated_number,
             "CallBackURL": call_back_url,
-            "AccountReference": "CompanyXLTD",
-            "TransactionDesc": "Payment of X" 
+            "AccountReference": "DUOTASKS.COM",
+            "TransactionDesc": "Wallet Funding" 
         }
 
         # Make the API call to M-Pesa C2B
@@ -94,35 +120,54 @@ class MpesaC2BResource(Resource):
 
 class MpesaCallbackResource(Resource):
     
-    def post(self):
-        """Handle the callback from M-Pesa."""
-        # Get the data sent by M-Pesa (transaction status)
+    def post(self, user_id):
         data = request.get_json()
-        user_id = request.args.get('user_id')
-        # Log or process the data as needed
-        print(f"Callback Data: {json.dumps(data, indent=2)}")
+        # user_id = request.get
+        try:
+            stk = data['Body']['stkCallback']
+            merchant_request_id = stk.get('MerchantRequestID')
+            checkout_request_id = stk.get('CheckoutRequestID')
+            result_code = stk.get('ResultCode')
+            
 
-        # Check the response and update the transaction status in your database
-        # Example: You can check for success and update a payment status
-        if data.get("ResultCode") == 0:  # Success
-            transaction_id = data.get("TransID")
-            phone_number = data.get("MSISDN")
-            amount = data.get("Amount")
-            wallet = Wallet.query.filter_by(user_id=user_id).first()
+            if result_code == 0:
+                result_desc = stk.get('ResultDesc')
+                metadata = stk.get('CallbackMetadata', {}).get('Item', [])
+                parsed_metadata = {item['Name']: item.get('Value') for item in metadata}
+                amount = parsed_metadata.get("Amount")
+                amount = Decimal(str(parsed_metadata.get("Amount")))
+                transaction_id = parsed_metadata.get("MpesaReceiptNumber")
+                transaction_date = parsed_metadata.get("TransactionDate")
+                phone_number = parsed_metadata.get("PhoneNumber")
+                # You must define how to find user_id from phone_number or transaction ID
 
-            if not wallet:
-                wallet = Wallet(user_id=user_id)
-            if wallet.balance is None:
-                wallet.balance = 0.0
+                if not user_id:
+                    return {"message": "User not found", "phone": phone_number}, 404
 
-            wallet.balance += amount
+                wallet = Wallet.query.filter_by(user_id=user_id).first()
 
-            wallet.balance += amount
-            db.session.add(wallet)
-            db.session.commit()
-            # Update your payment status here in the database or take necessary action
+                if not wallet:
+                    wallet = Wallet(user_id=user_id)
 
-            return {"message": "Transaction successful", "data": data}, 200
-        
-        else:
-            return {"message": "Transaction failed", "data": data}, 400
+                if wallet.balance is None:
+                    wallet.balance = 0.0
+
+                wallet.balance += amount
+                db.session.add(wallet)
+                db.session.commit()
+
+                return {
+                    "message": "Transaction successful",
+                    "transaction_id": transaction_id,
+                    "amount": str(amount),
+                    "phone_number": phone_number
+                }, 200
+
+            else:
+                return {
+                    "message": "Transaction failed"
+                }, 400
+
+        except Exception as e:
+            print(str(e))
+            return {"error": str(e)}, 500
