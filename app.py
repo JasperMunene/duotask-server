@@ -154,7 +154,8 @@ def create_app():
     # Wallet and payments
     api.add_resource(UserWalletResource, "/wallet")
     api.add_resource(MpesaC2BResource, '/payment/mpesa/initiate')
-    api.add_resource(MpesaCallbackResource, '/payment/mpesa/call_back/<int:user_id>')
+    api.add_resource(MpesaCallbackResource, '/payment/mpesa/disbursment/call_back/<int:user_id>')
+    api.add_resource(MpesaCallbackResource, '/payment/mpesa/disbursment/time_out/<int:user_id>')
     api.add_resource(GetGateways, '/payment/gateways')
     api.add_resource(MpesaPaymentResource, '/payment/mpesa')
     api.add_resource(CardPaymentResource, '/payment/card')

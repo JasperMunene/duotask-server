@@ -31,7 +31,6 @@ MPESA_CONSUMER_SECRET = os.getenv("SAFARICOM_SANDBOX_CONSUMER_SECRET")
 # CALLBACK_URL = os.getenv("CALLBACK_URL")
 
 class MpesaC2BResource(Resource):
-    
     @jwt_required()
     def post(self):
         user_id = get_jwt_identity()
