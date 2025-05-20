@@ -20,6 +20,7 @@ from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
 from resources.user_wallet_resource import UserWalletResource
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
+from resources.mpesa_disbursment_resource import MpesaDisbursmentCallback, MpesaDisbursmentInit
 from resources.push_notification import SubscribePush
 from resources.assignment_resource import TaskAssignResource
 from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, TestPay, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
@@ -154,8 +155,10 @@ def create_app():
     # Wallet and payments
     api.add_resource(UserWalletResource, "/wallet")
     api.add_resource(MpesaC2BResource, '/payment/mpesa/initiate')
-    api.add_resource(MpesaCallbackResource, '/payment/mpesa/disbursment/call_back/<int:user_id>')
-    api.add_resource(MpesaCallbackResource, '/payment/mpesa/disbursment/time_out/<int:user_id>')
+    api.add_resource(MpesaCallbackResource, '/payment/mpesa/call_back/<int:user_id>')
+    api.add_resource(MpesaDisbursmentInit, '/payment/disbursment/')
+    
+    api.add_resource(MpesaDisbursmentCallback, '/payment/mpesa/disbursment/call_back/<int:user_id>')
     api.add_resource(GetGateways, '/payment/gateways')
     api.add_resource(MpesaPaymentResource, '/payment/mpesa')
     api.add_resource(CardPaymentResource, '/payment/card')
