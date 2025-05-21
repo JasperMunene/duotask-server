@@ -19,6 +19,8 @@ from resources.feedback_resource import Feedback_resource
 from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
 from resources.user_wallet_resource import UserWalletResource
+
+from resources.test_resource import TestFloatLedger
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from resources.mpesa_disbursment_resource import MpesaDisbursmentCallback, MpesaDisbursmentInit
 from resources.push_notification import SubscribePush
@@ -177,6 +179,9 @@ def create_app():
 
     # Feedback routes
     api.add_resource(Feedback_resource, '/feedbacks') #post feedback, get /feedback?page={page}&limit={limit}
+    
+    # testing resources
+    api.add_resource(TestFloatLedger, '/api/test/float_ledger')
     return app
 
 # Run the app using Flask-SocketIO if this file is run directly

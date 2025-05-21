@@ -10,7 +10,6 @@ class TransactionLedger(db.Model, SerializerMixin):
     amount = db.Column(db.Numeric(12, 2), nullable=False)
     type = db.Column(db.String(50))  # e.g., 'peer_transfer', 'platform_fee', 'top_up'
     status = db.Column(db.String(20), default='pending')  # or 'completed', 'failed'
-    balance = db.Column(db.Numeric(12, 2), nullable=False)
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 

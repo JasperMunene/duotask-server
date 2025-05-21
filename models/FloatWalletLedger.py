@@ -10,4 +10,5 @@ class FloatWalletLedger(db.Model):
     destination = db.Column(db.String(100))  # 'float', 'user', 'bank', etc
     purpose = db.Column(db.String(100))  # 'float_topup', 'payout', 'revenue_transfer'
     status = db.Column(db.String(20), default='pending')
+    balance = db.Column(db.Numeric(12, 2), nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
