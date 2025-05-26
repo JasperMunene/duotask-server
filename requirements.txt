@@ -24,6 +24,7 @@ click
 click-didyoumean
 click-plugins
 click-repl
+cloudinary
 coverage
 cryptography
 Deprecated
