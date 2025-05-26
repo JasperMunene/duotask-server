@@ -6,6 +6,7 @@ from models.conversation import Conversation
 from models.message import Message
 from models.user import User
 from flask import current_app
+from sqlalchemy.orm import joinedload
 from models import db
 import datetime
 
@@ -78,7 +79,7 @@ class ConversationResource(Resource):
                     "text": msg.message,
                     "time": msg.date_time.isoformat(),
                     "status": msg.status,
-                    "sent": msg.sender_id == user_id  # True if sender_id matches user_id, else False
+                    "sent": int(msg.sender_id) == int(user_id)  # True if sender_id matches user_id, else False
                 }
                 for msg in last_10_msgs
             ]
@@ -87,6 +88,7 @@ class ConversationResource(Resource):
                 Message.query
                 .filter_by(conversation_id=convo.id)
                 .order_by(Message.date_time.desc())
+                .limit(20)
                 .first()
             )
 
@@ -103,7 +105,9 @@ class ConversationResource(Resource):
                 "recipient": {
                     "user_id": recipient.id,
                     "name": recipient.name,
-                    "avator": recipient.image
+                    "avator": recipient.image,
+                    "status": recipient.status,
+                    "last_seen": recipient.last_seen.isoformat()
                 },
                 "messages": messages,
                 "last_msg_id": last_msg.id,
@@ -116,6 +120,69 @@ class ConversationResource(Resource):
 
         cache.set(cache_key, result)
         return result
+
+class ChatResource(Resource):
+    @jwt_required()
+    def get(self, conversation_id):
+        user_id = get_jwt_identity()
+        cache = current_app.cache
+        cache_key = f"chat_{conversation_id}_{user_id}"
+        print(user_id)
+        # Check cache first
+        cached_chat = cache.get(cache_key)
+        if cached_chat:
+            return cached_chat
+        
+        conversation = Conversation.query.get(conversation_id)
+        if not conversation:
+            return {"message": "Conversation not found"}, 404
+        
+        if conversation.task_giver != user_id:
+            recipient_id = conversation.task_giver
+        else:
+            recipient_id = conversation.task_doer
+
+        user = User.query.get(recipient_id)
+
+        # Fetch last 20 messages from the database, ordered ascending by date_time
+        messages = (
+            Message.query
+            .filter_by(conversation_id=conversation_id)
+            .order_by(Message.date_time.desc())  # get newest first
+            .limit(20)
+            .all()
+        )
+
+        # Reverse to ascending order (oldest first)
+        messages.reverse()
+
+        response = {
+            "user_info": {
+                "id": user.id,
+                "name": user.name,
+                "avator": user.image,
+                "status": user.status,
+                "last_seen": user.last_seen.isoformat()
+            },
+            "messages": [
+                {
+                    "message_id": msg.id,
+                    "sender_id": msg.sender_id,
+                    "receiver_id": msg.reciever_id,
+                    "text": msg.message,
+                    "time": msg.date_time.isoformat(),
+                    "status": msg.status,
+                    "sender_id" : msg.sender_id,
+                    "sent": int(msg.sender_id) == int(user_id)
+                }
+                for msg in messages
+            ]
+        }
+
+        # Cache the result (optional: set a TTL if needed)
+        cache.set(cache_key, response)
+        
+        return response
 
 # /messages/<conversation_id>?offset=0&limit=10
 class OlderMessages(Resource):
@@ -151,7 +218,7 @@ class OlderMessages(Resource):
                 "text": msg.message,
                 "time": msg.date_time.isoformat(),
                 "status": msg.status,
-                "sent": msg.sender_id == user_id
+                "sent": int(msg.sender_id) == int(user_id)
             }
             for msg in messages
         ]

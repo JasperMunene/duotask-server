@@ -67,7 +67,7 @@ class SignupResource(Resource):
                 "user_id": new_user.id
             }, 201
 
-        except Exception as e:
+        except Exception as e:  
             db.session.rollback()
             current_app.logger.error(f"Signup error: {str(e)}")
             return {"message": "Registration failed"}, 500
@@ -155,8 +155,10 @@ class LoginResource(Resource):
                     "id": user.id,
                     "name": user.name,
                     "email": user.email,
-                    "image": user.image
-                }
+                    "image": user.image,
+                    "access_token": access_token
+                },
+                "access_token": access_token
             }, 200)
 
             response.set_cookie(

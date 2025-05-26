@@ -14,7 +14,7 @@ from resources.auth_resource import SignupResource, VerifyOTPResource, LoginReso
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
-from resources.conversation_resource import ConversationResource, OlderMessages
+from resources.conversation_resource import ConversationResource, OlderMessages, ChatResource
 from resources.feedback_resource import Feedback_resource
 from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
@@ -32,7 +32,7 @@ from resources.upload_media_resource import ImageUploadResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 import threading
-
+import socket_events
 # Load environment variables from .env file
 load_dotenv()
 
@@ -149,6 +149,7 @@ def create_app():
     # Messaging and conversation routes
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
     api.add_resource(OlderMessages, '/messages/<int:conversation_id>')
+    api.add_resource(ChatResource, '/chat/<int:conversation_id>')
 
     # Bidding and user relation routes
     api.add_resource(BidsResource, '/tasks/<int:task_id>/bids')
