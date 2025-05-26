@@ -88,7 +88,6 @@ class ConversationResource(Resource):
                 Message.query
                 .filter_by(conversation_id=convo.id)
                 .order_by(Message.date_time.desc())
-                .limit(20)
                 .first()
             )
 
@@ -196,9 +195,9 @@ class OlderMessages(Resource):
         cache_key = f"older_msgs_{conversation_id}_{offset}_{limit}"
 
         # Check cache first
-        cached_msgs = cache.get(cache_key)
-        if cached_msgs:
-            return cached_msgs
+        # cached_msgs = cache.get(cache_key)
+        # if cached_msgs:
+        #     return cached_msgs
 
         # Fetch from DB if not cached
         messages = (
@@ -209,6 +208,7 @@ class OlderMessages(Resource):
             .limit(limit)
             .all()
         )
+        
 
         response = [
             {
