@@ -64,7 +64,7 @@ class ConversationResource(Resource):
                 Message.query
                 .filter_by(conversation_id=convo.id)
                 .order_by(Message.date_time.desc())  # Use asc() to get messages in ascending order
-                .limit(10)
+                .limit(20)
                 .all()
             )
 
@@ -83,6 +83,7 @@ class ConversationResource(Resource):
                 }
                 for msg in last_10_msgs
             ]
+            
             # Just get the last message only
             last_msg = (
                 Message.query

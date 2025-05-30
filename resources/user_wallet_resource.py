@@ -31,7 +31,7 @@ class UserWalletResource(Resource):
         # Cache the wallet balance for 5 minutes
         cache.set(f"user_wallet_{user_id}", wallet.balance, timeout=300)
 
-        return {"balance": wallet.balance}, 200
+        return {"balance": float(wallet.balance)}, 200
 
     @jwt_required()
     def post(self):
@@ -60,7 +60,7 @@ class UserWalletResource(Resource):
         cache = current_app.cache
         cache.delete(f"user_wallet_{user_id}")
 
-        return {"message": "Wallet topped up", "balance": wallet.balance}, 200
+        return {"message": "Wallet topped up", "balance": float(wallet.balance)}, 200
 
     @jwt_required()
     def put(self):
@@ -86,4 +86,4 @@ class UserWalletResource(Resource):
         cache = current_app.cache
         cache.delete(f"user_wallet_{user_id}")
 
-        return {"message": "Withdrawal successful", "balance": wallet.balance}, 200
+        return {"message": "Withdrawal successful", "balance": float(wallet.balance)}, 200

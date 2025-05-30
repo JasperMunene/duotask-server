@@ -151,11 +151,23 @@ def handle_send_message(data):
     db.session.add(new_message)
     db.session.commit()
 
+    
     # Handle cache access within app context
     with current_app.app_context():
         # Check if receiver is online
+        sender_sid = current_app.cache.get(f"user_sid:{sender_id}")
+        if sender_sid:
+            socketio.emit('message_sent', {
+                'conversation_id': conversation_id,
+                'message_id': new_message.id,
+                'status': "sent",
+                'success': True
+            }, room=sender_sid)
+        print('message sent')
+        current_app.cache.delete(f"conversations_user_{receiver_id}")
+        current_app.cache.delete(f"conversations_user_{sender_id}")
         receiver_sid = current_app.cache.get(f"user_sid:{receiver_id}")
-        Notify(user_id=receiver_id, message="You got a new message", source="chat").post()
+        Notify(user_id=receiver_id, message="You got a new message", source="chat", sender_id=sender_id).post()
         if receiver_sid:
             # Update message status to delivered
             message = Message.query.get(new_message.id)

@@ -9,67 +9,73 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class Notify():
-    def __init__(self, user_id, message, source, is_important=False):
+class Notify:
+    def __init__(self, user_id, message, source, is_important=False, sender_id=None):
         self.user_id = str(user_id)
         self.message = message
         self.source = source
         self.is_important = is_important
-        
+        self.sender_id = str(sender_id) if sender_id is not None else None
+
     def post(self):
-        user_id = self.user_id
-        message = self.message
-        source = self.source
-        is_important = self.is_important
+        notification = None  # Initialize to prevent reference before assignment
+        try:
+            if self.source != "chat":
+                notification = Notification(
+                    user_id=self.user_id,
+                    message=self.message,
+                    source=self.source,
+                    sender_id=self.sender_id
+                )
+                db.session.add(notification)
+                db.session.commit()
 
-        # Save notification
-        notification = Notification(
-            user_id=user_id,
-            message=message,
-            source=source
-        )
-        
-        db.session.add(notification)
-        db.session.commit()
-        
-        with current_app.app_context():
-            # Check if user is online
-            receiver_sid = current_app.cache.get(f"user_sid:{user_id}")
-            if receiver_sid:
-                # Emit to receiver
-                socketio.emit('new_notification', {
-                    'notification_id': notification.id,
-                    'user_id': user_id,
-                    'message': notification.message,
-                    'source': notification.source
-                }, room=receiver_sid)
+            with current_app.app_context():
+                user_details = self._get_user_details(self.sender_id)
+                receiver_sid = current_app.cache.get(f"user_sid:{self.user_id}")
 
-                logger.info(f"notification sent to user {user_id} connected to {receiver_sid}")
-            else:
-                logger.info(f"user {user_id} not online to be notified")
-
-            # Send SMS if important
-            if is_important:
-                phone_number = self._get_user_phone(user_id)
-                if phone_number:
-                    SendSms(phone_number, message).post()
-                    logger.info(f"Important notification: SMS sent to {phone_number}")
+                if receiver_sid:
+                    socketio.emit('new_notification', {
+                        'notification_id': notification.id if notification else None,
+                        'user_id': self.user_id,
+                        'user_data': user_details,
+                        'message': self.message,
+                        'source': self.source
+                    }, room=receiver_sid)
+                    logger.info(f"Notification sent to user {self.user_id} on socket {receiver_sid}")
                 else:
-                    logger.info("Phone number not found for user")
-            
-            # send push notification
-            subs = PushSubscription.query.filter_by(user_id=user_id).all()
-            if not subs:
-                logger.info("user hasn't subscribed to notification")
-            
-            for sub in subs:
-                device_token = sub.token
-                message_title = "New notification"
-                message_body = message
-                SendPush(device_token, message_title, message_body).send_push()
+                    logger.info(f"User {self.user_id} not online to receive notification")
+
+                # SMS fallback if important
+                if self.is_important:
+                    phone_number = self._get_user_phone(self.user_id)
+                    if phone_number:
+                        SendSms(phone_number, self.message).post()
+                        logger.info(f"Important notification SMS sent to {phone_number}")
+                    else:
+                        logger.info("Phone number not found for user")
+
+                # Push notifications
+                subs = PushSubscription.query.filter_by(user_id=self.user_id).all()
+                if not subs:
+                    logger.info("User hasn't subscribed to push notifications")
+
+                for sub in subs:
+                    SendPush(sub.token, "New notification", self.message).send_push()
+        except Exception as e:
+            logger.error(f"Error sending notification: {e}", exc_info=True)
+
+    def _get_user_details(self, user_id):
+        from models.user import User
+        user = User.query.filter_by(id=user_id).first()
+        if not user:
+            return None
+        return {
+            "name": user.name,
+            "profile_url": user.image
+        }
 
     def _get_user_phone(self, user_id):
-        # Lazy import to avoid circular dependencies
         from models.user import User
         user = User.query.filter_by(id=user_id).first()
         return user.phone if user else None
