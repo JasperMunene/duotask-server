@@ -147,6 +147,11 @@ class LoginResource(Resource):
         if not user.is_verified:
             return {"message": "Account not verified"}, 403
 
+        if args['rememberMe']:
+            cookie_max_age = 30 * 24 * 60 * 60
+        else:
+            cookie_max_age = 24 * 60 * 60
+
         try:
             access_token = create_access_token(identity=str(user.id))
             response = make_response({
@@ -165,7 +170,7 @@ class LoginResource(Resource):
                 httponly=True,
                 secure=True,
                 samesite="Lax",
-                max_age=86400
+                max_age=cookie_max_age,
             )
             return response
 
