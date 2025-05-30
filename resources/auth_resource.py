@@ -134,6 +134,7 @@ class LoginResource(Resource):
                             help="Email cannot be blank!")
         parser.add_argument('password', type=str, required=True,
                             help="Password cannot be blank!")
+        parser.add_argument('rememberMe', type=bool, default=False, location='json')
         args = parser.parse_args()
 
         user = User.query.filter_by(email=args['email']).first()
