@@ -11,7 +11,7 @@ class Notification(db.Model, SerializerMixin):
     message = db.Column(db.Text, nullable=False)
     is_read = db.Column(db.Boolean, default=False)
     source = db.Column(db.Text, nullable=False)
-    sender_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    sender_id = db.Column(db.Integer, nullable=True)
     is_important = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 
