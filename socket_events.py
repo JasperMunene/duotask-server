@@ -257,7 +257,7 @@ def handle_typing(data):
         
         if not conversation:
             return
-        
+            
         # Determine the other user in this conversation
         other_user_id = str(conversation.task_doer) if int(conversation.task_giver) == int(user_id) else str(conversation.task_giver)
         

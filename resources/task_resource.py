@@ -189,6 +189,7 @@ class TaskResource(Resource):
         else:
             serialized['location'] = None
 
+
         # 3) same for categories
         serialized['categories'] = [
             c.to_dict(only=('id', 'name')) for c in task.categories
@@ -199,6 +200,13 @@ class TaskResource(Resource):
             'start': str(task.preferred_start_time) if task.preferred_start_time else None,
             'end': str(task.preferred_end_time) if task.preferred_end_time else None,
         }
+        
+        if task.user_id:
+            serialized['user'] = {
+                'id': task.user.id,
+                'name': task.user.name,
+                'image': task.user.image,
+            }
         if args['lat'] and args['lon'] and task.location:
             serialized['distance'] = haversine(
                 args['lat'], args['lon'],

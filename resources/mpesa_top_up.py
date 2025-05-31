@@ -1,7 +1,7 @@
 import json
 import base64
 import requests
-from flask import request, current_app, jsonify
+from flask import request, jsonify, current_app, request
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
@@ -11,7 +11,8 @@ from models import db
 from models.user_wallet import Wallet
 import re
 from decimal import Decimal
-
+from extensions import socketio
+from utils.send_notification import Notify
 # Load environment variables from .env file
 load_dotenv()
 
@@ -154,7 +155,14 @@ class MpesaCallbackResource(Resource):
                 wallet.balance += amount
                 db.session.add(wallet)
                 db.session.commit()
-
+                receiver_sid = current_app.cache.get(f"user_sid:{user_id}")
+                socketio.emit('payment_received', {
+                    "message": "Transaction successful",
+                    "transaction_id": transaction_id,
+                    "amount": str(amount),
+                    "phone_number": phone_number
+                }, room=receiver_sid)                
+                Notify(user_id=user_id, message=f"Wallet top up of KES {amount} was successfull REF {transaction_id}", source="wallet", sender_id=user_id).post()
                 return {
                     "message": "Transaction successful",
                     "transaction_id": transaction_id,
