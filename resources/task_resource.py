@@ -195,11 +195,9 @@ class TaskResource(Resource):
             c.to_dict(only=('id', 'name')) for c in task.categories
         ]
 
-        # 4) your preferred_time + distance logic stays the same…
-        serialized['preferred_time'] = {
-            'start': str(task.preferred_start_time) if task.preferred_start_time else None,
-            'end': str(task.preferred_end_time) if task.preferred_end_time else None,
-        }
+
+        serialized['preferred_time'] = str(task.preferred_time)
+
         
         if task.user_id:
             serialized['user'] = {
@@ -234,8 +232,7 @@ class TaskResource(Resource):
                             help='Invalid schedule type')
         parser.add_argument('specific_date', type=lambda x: datetime.fromisoformat(x) if x else None)
         parser.add_argument('deadline_date', type=lambda x: datetime.fromisoformat(x) if x else None)
-        parser.add_argument('preferred_start_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
-        parser.add_argument('preferred_end_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
+        parser.add_argument('preferred_time', type=str)
         parser.add_argument('latitude', type=float)
         parser.add_argument('longitude', type=float)
         parser.add_argument('country', type=str)
@@ -300,11 +297,17 @@ class TaskResource(Resource):
             if data['deadline_date'] <= now:
                 abort(400, message="Deadline must be in the future")
 
+
         elif data['schedule_type'] == 'flexible':
-            if not data['preferred_start_time'] or not data['preferred_end_time']:
-                abort(400, message="Start and end times required for 'flexible' schedule")
-            if data['preferred_start_time'] >= data['preferred_end_time']:
-                abort(400, message="Start time must be before end time")
+
+            if not data.get('preferred_time'):
+                abort(400,
+                      message="Preferred time (e.g., morning, midday, afternoon, evening) is required for 'flexible' schedule")
+
+            allowed_times = ['morning', 'midday', 'afternoon', 'evening']
+
+            if data['preferred_time'] not in allowed_times:
+                abort(400, message=f"Preferred time must be one of: {', '.join(allowed_times)}")
 
     def _validate_location(self, data):
         """Validate and extract location data"""
@@ -356,8 +359,7 @@ class TaskResource(Resource):
             schedule_type=data['schedule_type'],
             specific_date=data.get('specific_date'),
             deadline_date=data.get('deadline_date'),
-            preferred_start_time=data.get('preferred_start_time'),
-            preferred_end_time=data.get('preferred_end_time')
+            preferred_time=data.get('preferred_time')
         )
 
         db.session.add(task)
@@ -481,8 +483,7 @@ class SingleTaskResource(Resource):
             'schedule_type',
             'specific_date',
             'deadline_date',
-            'preferred_start_time',
-            'preferred_end_time',
+            'preferred_time',
             'created_at',
             'updated_at',
         ))
@@ -558,8 +559,7 @@ class SingleTaskResource(Resource):
                             choices=['specific_day', 'before_day', 'flexible'])
         parser.add_argument('specific_date', type=lambda x: datetime.fromisoformat(x) if x else None)
         parser.add_argument('deadline_date', type=lambda x: datetime.fromisoformat(x) if x else None)
-        parser.add_argument('preferred_start_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
-        parser.add_argument('preferred_end_time', type=lambda x: datetime.strptime(x, '%H:%M').time() if x else None)
+        parser.add_argument('preferred_time', type=str)
         parser.add_argument('latitude', type=float)
         parser.add_argument('longitude', type=float)
         parser.add_argument('country', type=str)
@@ -630,16 +630,15 @@ class SingleTaskResource(Resource):
             task.deadline_date = deadline_date
 
         elif new_schedule_type == 'flexible':
-            start = data.get('preferred_start_time') or task.preferred_start_time
-            end = data.get('preferred_end_time') or task.preferred_end_time
-            if not start or not end:
-                abort(400, message="Start and end times required for 'flexible' schedule")
-            if start >= end:
-                abort(400, message="Start time must be before end time")
-            task.preferred_start_time = start
-            task.preferred_end_time = end
+            preferred_time = data.get('preferred_time') or task.preferred_time
+            if not preferred_time:
+                abort(400,
+                      message="Preferred time (e.g., morning, midday, afternoon, evening) is required for 'flexible' schedule")
+            allowed_times = ['morning', 'midday', 'afternoon', 'evening']
+            if preferred_time not in allowed_times:
+                abort(400, message=f"Preferred time must be one of: {', '.join(allowed_times)}")
 
-        task.schedule_type = new_schedule_type
+            task.preferred_time = preferred_time
 
     def _validate_location(self, data):
         if data.get('work_mode') == 'physical':
