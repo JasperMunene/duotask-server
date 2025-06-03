@@ -240,7 +240,7 @@ class TaskResource(Resource):
         parser.add_argument('city', type=str)
         parser.add_argument('area', type=str)
         parser.add_argument('images', type=str, action='append')
-        # Note: No category_ids argument – category will be generated via the background worker.
+
 
         data = parser.parse_args()
         user_id = get_jwt_identity()  # Assumes JWT is used for authentication
