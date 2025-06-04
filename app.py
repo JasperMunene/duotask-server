@@ -47,6 +47,11 @@ def create_app():
         SQLALCHEMY_DATABASE_URI=os.getenv("CONNECTION_STRING"),
         JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY", "your_jwt_secret_key"),
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=24),
+        JWT_TOKEN_LOCATION=["cookies"],
+        JWT_ACCESS_COOKIE_NAME="access_token",
+        JWT_COOKIE_SECURE=True,
+        JWT_COOKIE_SAMESITE="Lax",
+        JWT_COOKIE_CSRF_PROTECT=False,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         FRONTEND_URL=os.getenv("FRONTEND_URL", "http://localhost:3000"),
 
