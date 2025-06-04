@@ -12,7 +12,7 @@ from models.user_info import UserInfo
 from models.task_image import TaskImage
 from models.bid import Bid
 from models.task_assignment import TaskAssignment
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 import logging
 from werkzeug.exceptions import HTTPException
@@ -243,7 +243,7 @@ class TaskResource(Resource):
 
 
         data = parser.parse_args()
-        user_id = get_jwt_identity()  # Assumes JWT is used for authentication
+        user_id = get_jwt_identity()
 
         # Validate business logic
         self._validate_budget(data['budget'])
@@ -282,32 +282,54 @@ class TaskResource(Resource):
             abort(400, message="Budget must be between 0.01 and 1,000,000")
 
     def _validate_schedule(self, data):
-        """Validate scheduling constraints"""
-        now = datetime.now()
+        """Validate scheduling constraints."""
+        # get “now” as an aware UTC datetime
+        now = datetime.now(timezone.utc)
 
-        if data['schedule_type'] == 'specific_day':
-            if not data['specific_date']:
+        schedule_type = data.get('schedule_type')
+        if schedule_type == 'specific_day':
+            raw = data.get('specific_date')
+            if not raw:
                 abort(400, message="Specific date required for 'specific_day' schedule")
-            if data['specific_date'] <= now:
+
+            # parse and ensure tz-aware
+            specific = (
+                raw if isinstance(raw, datetime)
+                else datetime.fromisoformat(raw)
+            )
+            if specific.tzinfo is None:
+                specific = specific.replace(tzinfo=timezone.utc)
+
+            if specific < now:
                 abort(400, message="Specific date must be in the future")
 
-        elif data['schedule_type'] == 'before_day':
-            if not data['deadline_date']:
+        elif schedule_type == 'before_day':
+            raw = data.get('deadline_date')
+            if not raw:
                 abort(400, message="Deadline date required for 'before_day' schedule")
-            if data['deadline_date'] <= now:
+
+            deadline = (
+                raw if isinstance(raw, datetime)
+                else datetime.fromisoformat(raw)
+            )
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=timezone.utc)
+
+            if deadline <= now:
                 abort(400, message="Deadline must be in the future")
 
+        elif schedule_type == 'flexible':
+            preferred = data.get('preferred_time')
+            if preferred:
+                allowed_times = {'morning', 'midday', 'afternoon', 'evening'}
+                if preferred not in allowed_times:
+                    abort(
+                        400,
+                        message=f"Preferred time must be one of: {', '.join(allowed_times)}"
+                    )
+        else:
+            abort(400, message=f"Unknown schedule_type: {schedule_type}")
 
-        elif data['schedule_type'] == 'flexible':
-
-            if not data.get('preferred_time'):
-                abort(400,
-                      message="Preferred time (e.g., morning, midday, afternoon, evening) is required for 'flexible' schedule")
-
-            allowed_times = ['morning', 'midday', 'afternoon', 'evening']
-
-            if data['preferred_time'] not in allowed_times:
-                abort(400, message=f"Preferred time must be one of: {', '.join(allowed_times)}")
 
     def _validate_location(self, data):
         """Validate and extract location data"""
@@ -359,7 +381,7 @@ class TaskResource(Resource):
             schedule_type=data['schedule_type'],
             specific_date=data.get('specific_date'),
             deadline_date=data.get('deadline_date'),
-            preferred_time=data.get('preferred_time')
+            preferred_time=data["preferred_time"] if data["schedule_type"] == "flexible" else None
         )
 
         db.session.add(task)
