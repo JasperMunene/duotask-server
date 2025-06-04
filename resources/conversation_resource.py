@@ -43,6 +43,7 @@ class ConversationResource(Resource):
         cache.delete(f"conversations_user_{task_doer_id}")
         return {"message": "Conversation created successfully", "conversation_id": conversation.id}, 201
 
+    @jwt_required()
     def get(self, user_id):
         cache = current_app.cache
         cache_key = f"conversations_user_{user_id}"
@@ -188,8 +189,8 @@ class ChatResource(Resource):
 class OlderMessages(Resource):
     @jwt_required()
     def get(self, conversation_id):
-        offset = int(request.args.get('offset', 0))
-        limit = int(request.args.get('limit', 10))
+        offset = int(request.args.get('offset', 10))
+        limit = int(request.args.get('limit', 20))
         user_id = get_jwt_identity()
 
         cache = current_app.cache

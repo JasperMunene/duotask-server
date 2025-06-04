@@ -12,6 +12,7 @@ class Message(db.Model, SerializerMixin):
     conversation_id = db.Column(db.Integer, db.ForeignKey('conversation.id'), nullable=False)
     sender_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
     reciever_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    message = db.Column(db.Text, nullable=False)
+    message = db.Column(db.Text, nullable=True)
+    image = db.Column(db.Text, nullable=True)
     status = db.Column(db.Text, default="sent")
     date_time = db.Column(db.DateTime, server_default=db.func.now())

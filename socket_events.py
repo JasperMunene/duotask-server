@@ -179,29 +179,23 @@ def handle_send_message(data):
                 'conversation_id': conversation_id,
                 'message_id': new_message.id,
                 'message': new_message.message,
-                'sender_id': sender_id,
+                'sender_id': int(sender_id),
                 'time': new_message.date_time.isoformat()
             }, room=receiver_sid)
-
+            
             status = "delivered"
-        else:
-            status = "sent"
+            # Emit to sender about the message status
+            socketio.emit('message_status_update', {
+                    'conversation_id': conversation_id,
+                    'message_id': new_message.id,
+                    'status': status
+                }, room=sender_sid)
 
-        # Confirm to sender
-        sender_sid = current_app.cache.get(f"user_sid:{sender_id}")
-        if sender_sid:
-            socketio.emit('message_sent', {
-                'conversation_id': conversation_id,
-                'message_id': new_message.id,
-                'status': status,
-                'success': True
-            }, room=sender_sid)
-
-    print(f"📨 Message from {sender_id} to {receiver_id}: {message_text} | Status: {status}")
+            print(f"📨 Message from {sender_id} to {receiver_id}: {message_text} | Status: {status}")
     
 
 @socketio.on('message_status')
-def handle_message_read(data):
+def handle_message_status(data):
     """Handle updating message status."""
     user_id = request.args.get('user_id')
     conversation_id = data.get('conversation_id')
@@ -246,67 +240,77 @@ def handle_message_read(data):
 @socketio.on('typing')
 def handle_typing(data):
     """Handle typing indicators."""
-    user_id = request.args.get('user_id')
-    conversation_id = data.get('conversation_id')
-    is_typing = data.get('is_typing', False)
-    if not user_id or not conversation_id:
-        return
-    
     try:
-        conversation = Conversation.query.get(conversation_id)
-        
-        if not conversation:
+        user_id = int(request.args.get('user_id'))
+        conversation_id = data.get('conversation_id')
+        receiver_id = data.get('receiver_id')
+        is_typing = data.get('is_typing', False)
+
+        if not user_id or not conversation_id:
             return
+
+        if receiver_id:
+            other_user_id = receiver_id
+        else:
+            conversation = db.session.query(
+                Conversation.task_giver, Conversation.task_doer
+            ).filter_by(id=conversation_id).first()
             
-        # Determine the other user in this conversation
-        other_user_id = str(conversation.task_doer) if int(conversation.task_giver) == int(user_id) else str(conversation.task_giver)
-        
-        # Handle cache access within app context
+            if not conversation:
+                return
+
+            other_user_id = (
+                str(conversation.task_doer) if conversation.task_giver == user_id
+                else str(conversation.task_giver)
+            )
+
         with current_app.app_context():
-            other_user_sid = current_app.cache.get(f"user_sid:{other_user_id}")  # Get the other user's SID from cache
+            other_user_sid = current_app.cache.get(f"user_sid:{other_user_id}")
             if other_user_sid:
                 socketio.emit('typing_indicator', {
                     'conversation_id': conversation_id,
                     'user_id': user_id,
                     'is_typing': is_typing
                 }, room=other_user_sid)
-    
+        
     except Exception as e:
         print(f"Error with typing indicator: {e}")
 
+
 @socketio.on('mark_conversation_read')
 def handle_mark_all_delivered():
-    """Mark all messages in a conversation as read."""
+    """Mark all messages in a conversation as delivered for the current user."""
     user_id = request.args.get('user_id')
     
     if not user_id:
         return
-    
+
     try:
-        # Fetch all unread messages for the given user
+        # Fetch all undelivered messages for this user
         unread_messages = Message.query.filter_by(
-            receiver_id=user_id,
-            status='sent'  # Messages that are not read yet
+            reciever_id=user_id,
+            status='sent'  # Messages not marked as delivered yet
         ).all()
 
         # Update their status to "delivered"
         for message in unread_messages:
-            message.status = "delivered"
+            message.status = 'delivered'
         
-        # Commit the changes to the database
         db.session.commit()
 
-        # Notify the sender of each message about the status update
-        for message in unread_messages:
-            sender_sid = current_app.cache.get(f"user_sid:{message.sender_id}")  # Get sender SID from cache
-            
-            if sender_sid:
-                socketio.emit('message_status_update', {
-                    'conversation_id': message.conversation_id,
-                    'message_id': message.id,
-                    'status': 'delivered'
-                }, room=sender_sid)
+        print(f"[✓] Marked {len(unread_messages)} messages as delivered for user {user_id}")
 
+        # Optionally notify the sender(s)
+        with current_app.app_context():
+            for message in unread_messages:
+                sender_sid = current_app.cache.get(f"user_sid:{message.sender_id}")
+                if sender_sid:
+                    socketio.emit('message_status_update', {
+                        'conversation_id': message.conversation_id,
+                        'message_id': message.id,
+                        'status': 'delivered'
+                    }, room=sender_sid)
+    
     except Exception as e:
-        print(f"Error marking conversation as read: {e}")
         db.session.rollback()
+        print(f"[❌] Error marking messages as delivered for user {user_id}: {e}")
