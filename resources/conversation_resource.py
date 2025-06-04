@@ -78,6 +78,7 @@ class ConversationResource(Resource):
                     "sender_id": msg.sender_id,
                     "receiver_id": msg.reciever_id,
                     "text": msg.message,
+                    "image": msg.image,
                     "time": msg.date_time.isoformat(),
                     "status": msg.status,
                     "sent": int(msg.sender_id) == int(user_id)  # True if sender_id matches user_id, else False
@@ -95,8 +96,12 @@ class ConversationResource(Resource):
 
             if not last_msg:
                 continue  # skip convos with no messages (just in case)
+            last_message_text = (
+                "You: photo" if last_msg.sender_id == user_id else "photo"
+            ) if not last_msg.message and last_msg.image else (
+                f"You: {last_msg.message}" if last_msg.sender_id == user_id else last_msg.message
+            )
 
-            last_message_text = f"You: {last_msg.message}" if last_msg.sender_id == user_id else last_msg.message
             unread = last_msg.reciever_id == user_id and last_msg.status != "read"
 
             result.append({
@@ -171,6 +176,7 @@ class ChatResource(Resource):
                     "sender_id": msg.sender_id,
                     "receiver_id": msg.reciever_id,
                     "text": msg.message,
+                    "image": msg.image,
                     "time": msg.date_time.isoformat(),
                     "status": msg.status,
                     "sender_id" : msg.sender_id,
@@ -218,6 +224,7 @@ class OlderMessages(Resource):
                 "sender_id": msg.sender_id,
                 "receiver_id": msg.reciever_id,
                 "text": msg.message,
+                "image": msg.image,
                 "time": msg.date_time.isoformat(),
                 "status": msg.status,
                 "sent": int(msg.sender_id) == int(user_id)

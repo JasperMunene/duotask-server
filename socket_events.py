@@ -128,11 +128,13 @@ def handle_send_message(data):
     sender_id = request.args.get('user_id')
     receiver_id = data.get('receiver_id')
     conversation_id = data.get('conversation_id')
-    message_text = data.get('message')
+    message_text = data.get('message', None)
+    image_url = data.get('image_url', None)
 
-    if not sender_id or not receiver_id or not message_text:
+    if not sender_id or not receiver_id:
         socketio.emit('message_error', {'message': 'Missing required fields'})
         return
+    
 
     conversation = Conversation.query.get(conversation_id)
     if not conversation:
@@ -144,6 +146,7 @@ def handle_send_message(data):
         sender_id=sender_id,
         reciever_id=receiver_id,
         message=message_text,
+        image=image_url,
         date_time=db.func.now(),
         status="sent"
     )
@@ -164,8 +167,6 @@ def handle_send_message(data):
                 'success': True
             }, room=sender_sid)
         print('message sent')
-        current_app.cache.delete(f"conversations_user_{receiver_id}")
-        current_app.cache.delete(f"conversations_user_{sender_id}")
         receiver_sid = current_app.cache.get(f"user_sid:{receiver_id}")
         Notify(user_id=receiver_id, message="You got a new message", source="chat", sender_id=sender_id).post()
         if receiver_sid:
@@ -179,10 +180,12 @@ def handle_send_message(data):
                 'conversation_id': conversation_id,
                 'message_id': new_message.id,
                 'message': new_message.message,
-                'sender_id': int(sender_id),
+                'image': new_message.image,
+                'sender_id': sender_id,
                 'time': new_message.date_time.isoformat()
             }, room=receiver_sid)
             
+            print('message recieved')
             status = "delivered"
             # Emit to sender about the message status
             socketio.emit('message_status_update', {
