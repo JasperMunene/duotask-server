@@ -36,7 +36,8 @@ def categorize_task(self, task_id):
     app = create_app()
     with app.app_context():
         try:
-            task = Task.query.get(task_id)
+            # Eager load categories to prevent duplicate checks
+            task = Task.query.options(db.joinedload(Task.categories)).get(task_id)
             if not task:
                 logger.error(f"Task {task_id} not found")
                 return
@@ -70,21 +71,35 @@ Output:"""
 
             category_name = response.text.strip().title()[:50].strip(' .') or "Uncategorized"
 
-            # Find or create category
-            category = Category.query.filter(
-                func.lower(Category.name) == func.lower(category_name)
-            ).first()
+            # Find existing category
+            category = next(
+                (c for c in Category.query.all() if c.name.lower() == category_name.lower()),
+                None
+            )
 
+            # Create new category if needed
             if not category:
                 category = Category(name=category_name)
                 db.session.add(category)
+                db.session.flush()  # Generate ID without committing yet
+
+            # Check if category is already associated
+            if category not in task.categories:
+                task.categories.append(category)
+
+                # Remove temporary "Uncategorized" category if it exists
+                uncategorized = next(
+                    (c for c in task.categories if c.name.lower() == "uncategorized"),
+                    None
+                )
+                if uncategorized:
+                    task.categories.remove(uncategorized)
+
                 db.session.commit()
+                logger.info(f"Successfully categorized task {task_id} as {category_name}")
+            else:
+                logger.info(f"Task {task_id} already has category {category_name}")
 
-            # Update task with category (append association)
-            task.categories.append(category)
-            db.session.commit()
-
-            logger.info(f"Successfully categorized task {task_id} as {category_name}")
             return category_name
 
         except Exception as e:
