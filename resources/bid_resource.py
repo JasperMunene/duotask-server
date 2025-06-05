@@ -10,8 +10,9 @@ from models.bid import Bid
 from models.user import User
 from utils.completion_rate import UserCompletionRateCalculator
 from utils.user_rating import UserRatingCalculator
-import logging
+from utils.send_notification import Notify
 
+import logging
 logger = logging.getLogger(__name__)
 
 
@@ -243,8 +244,10 @@ class BidsResource(Resource):
         try:
             current_app.celery.send_task(
                 'notifications.new_bid',
-                args=(task.user_id, bid.id),
+                args=(task.user_id, bid.id, bid.user_id),
                 queue='notifications'
             )
+            
+            Notify(user_id=task.user_id, message="Bidded on your task", source="bid", sender_id=bid.user_id).post()
         except Exception as e:
             logger.error(f"Failed to queue notification: {e}")

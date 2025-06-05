@@ -189,8 +189,8 @@ def handle_send_message(data):
             status = "delivered"
             # Emit to sender about the message status
             socketio.emit('message_status_update', {
-                    'conversation_id': conversation_id,
-                    'message_id': new_message.id,
+                    'conversation_id': int(conversation_id),
+                    'message_id': int(new_message.id),
                     'status': status
                 }, room=sender_sid)
 
@@ -227,8 +227,8 @@ def handle_message_status(data):
             
             if sender_sid:
                 socketio.emit('message_status_update', {
-                    'conversation_id': conversation_id,
-                    'message_id': message_id,
+                    'conversation_id': int(conversation_id),
+                    'message_id': int(message_id),
                     'status': status
                 }, room=sender_sid)
                 print(f"Message {message_id} status updated to {status} for sender {sender_id}")
