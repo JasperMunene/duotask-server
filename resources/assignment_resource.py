@@ -6,6 +6,10 @@ from models import db
 from models.task import Task
 from models.bid import Bid
 from models.task_assignment import TaskAssignment
+from models.conversation import Conversation
+from models.message import Message
+from models.user import User
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -73,7 +77,22 @@ class TaskAssignResource(Resource):
                 status='assigned'
             )
             db.session.add(assignment)
+            conversation = Conversation(task_giver=user_id, task_doer=bid.user_id)
 
+            # Create the default message for task_doer
+            message = Message(
+                conversation=conversation,
+                sender_id=user_id,
+                reciever_id=bid.user_id,
+                message="Hello, let's start the conversation.",
+                date_time=db.func.now()
+            )
+
+            # Add the conversation and the message to the session and commit
+            db.session.add(conversation)
+            db.session.add(message)
+            
+            
             # Update accepted bid and task status
             bid.status = 'accepted'
             task.status = 'assigned'
@@ -93,7 +112,7 @@ class TaskAssignResource(Resource):
             # Invalidate caches and send notifications
             self._invalidate_caches(task_id)
             self._notify_parties(task, bid, assignment, rejected_user_ids)
-
+        
             return {
                 'message': 'Task assigned successfully',
                 'assignment_id': assignment.id,
@@ -121,17 +140,34 @@ class TaskAssignResource(Resource):
             # Notify accepted bidder
             current_app.celery.send_task(
                 'notifications.task_assigned',
-                args=(bid.user_id, assignment.id),
+                args=(task.id, bid.user_id, task.user_id),
                 queue='notifications'
             )
             # Notify rejected bidders
             if rejected_user_ids:
                 current_app.celery.send_task(
                     'notifications.bid_rejected',
-                    args=(task.id, list(set(rejected_user_ids))),
+                    # task_id, rejected_user_ids, task.user_id -> the owner who created the task
+                    args=(task.id, list(set(rejected_user_ids)), task.user_id),
                     queue='notifications'
                 )
         except Exception as e:
             logger.error(f"Notification system error: {e}")
 
-
+    def _notify_success_bider(self, task, bid, assignment, accepted_bidder):
+        """Notify the user who won the bid"""
+        try:
+            message = (
+                f"Congratulations! Your bid for the task '{task.title}' has been accepted. "
+                f"You have been assigned to complete this task with an agreed price of {bid.amount}."
+            )
+            notify = Notify(
+                user_id=bid.user_id,
+                message=message,
+                source='task_assignment',
+                is_important=True,
+                sender_id=task.user_id
+            )
+            notify.post()
+        except Exception as e:
+            logger.error(f"Failed to notify winning bidder: {e}")
