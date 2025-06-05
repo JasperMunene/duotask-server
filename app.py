@@ -20,6 +20,8 @@ from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
 from resources.user_wallet_resource import UserWalletResource
 
+from resources.category_resource import CategoryResource,PopularCategoriesResource
+
 from resources.test_resource import TestFloatLedger
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from resources.mpesa_disbursment_resource import MpesaDisbursmentCallback, MpesaDisbursmentInit
@@ -144,6 +146,10 @@ def create_app():
     
     # User routes
     api.add_resource(UserProfileResource, '/user/profile')
+
+    #Category routes
+    api.add_resource(CategoryResource, '/categories')
+    api.add_resource(PopularCategoriesResource, '/categories/popular')
 
     # Task routes
     api.add_resource(TaskResource, '/tasks')
