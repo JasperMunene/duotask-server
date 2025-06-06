@@ -14,7 +14,7 @@ from models.bid import Bid
 from models.task_assignment import TaskAssignment
 from datetime import datetime, timezone
 import math
-import loggingg
+import logging
 from werkzeug.exceptions import HTTPException
 
 
