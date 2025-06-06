@@ -1,4 +1,4 @@
-from app import create_app
+from flask import create_app
 from utils.send_notification import Notify
 from models.bid import Bid
 from models.user import User
