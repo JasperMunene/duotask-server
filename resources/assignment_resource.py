@@ -111,7 +111,7 @@ class TaskAssignResource(Resource):
 
             # Invalidate caches and send notifications
             self._invalidate_caches(task_id)
-            self._notify_parties(task, bid, assignment, rejected_user_ids)
+            self._notify_parties(task, bid, rejected_user_ids)
         
             return {
                 'message': 'Task assigned successfully',
@@ -134,7 +134,7 @@ class TaskAssignResource(Resource):
         except Exception as e:
             logger.error(f"Cache invalidation failed: {e}")
 
-    def _notify_parties(self, task, bid, assignment, rejected_user_ids):
+    def _notify_parties(self, task, bid, rejected_user_ids):
         """Handle all notification logic through Celery"""
         try:
             # Notify accepted bidder
@@ -154,20 +154,3 @@ class TaskAssignResource(Resource):
         except Exception as e:
             logger.error(f"Notification system error: {e}")
 
-    def _notify_success_bider(self, task, bid, assignment, accepted_bidder):
-        """Notify the user who won the bid"""
-        try:
-            message = (
-                f"Congratulations! Your bid for the task '{task.title}' has been accepted. "
-                f"You have been assigned to complete this task with an agreed price of {bid.amount}."
-            )
-            notify = Notify(
-                user_id=bid.user_id,
-                message=message,
-                source='task_assignment',
-                is_important=True,
-                sender_id=task.user_id
-            )
-            notify.post()
-        except Exception as e:
-            logger.error(f"Failed to notify winning bidder: {e}")

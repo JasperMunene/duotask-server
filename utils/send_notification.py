@@ -61,7 +61,7 @@ class Notify:
                     logger.info("User hasn't subscribed to push notifications")
 
                 for sub in subs:
-                    SendPush(sub.token, "New notification", self.message).send_push()
+                    SendPush(sub.token, sub.platform, "New notification", self.message).send_push()
         except Exception as e:
             logger.error(f"Error sending notification: {e}", exc_info=True)
 

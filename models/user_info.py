@@ -19,6 +19,8 @@ class UserInfo(db.Model, SerializerMixin):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete="CASCADE"), unique=True, nullable=False, index=True)
     tagline = db.Column(db.String(255), nullable=True, comment="User's short description")
     bio = db.Column(db.Text, nullable=True, comment="User's biography")
+    rating = db.Column(db.Float, nullable=True, comment="Rating of the user's rating")
+    completion_rate = db.Column(db.Float, nullable=True, comment="Completion rating of the user's rating")
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, server_default=db.func.now(), server_onupdate=db.func.now())
     mpesa_number = db.Column("mpesa_number", db.String(255), nullable=True)

@@ -15,6 +15,9 @@ from models.task_assignment import TaskAssignment
 from datetime import datetime, timezone
 import math
 import logging
+import json
+import base64
+import urllib.parse
 from werkzeug.exceptions import HTTPException
 
 
@@ -33,9 +36,8 @@ def haversine(lat1, lon1, lat2, lon2):
 
 class TaskResource(Resource):
     parser = reqparse.RequestParser()
-    parser.add_argument('page', type=int, default=1, location='args')
-    parser.add_argument('per_page', type=int, default=20, location='args',
-                        choices=[10, 20, 50, 100], help='Invalid items per page')
+    parser.add_argument('cursor', type=str, default=None, location='args')
+    parser.add_argument('limit', type=int, default=20, location='args')
     parser.add_argument('work_mode', type=str, location='args',
                         choices=['remote', 'physical'])
     parser.add_argument('category_ids', type=int, action='append', location='args')
@@ -53,7 +55,10 @@ class TaskResource(Resource):
     def get(self):
         args = self.parser.parse_args()
         cache = current_app.cache
-        cache_key = f"tasks_{str(args)}"
+        cache_key = f"tasks_{args['cursor']}_{args['limit']}_" \
+                    f"{args.get('work_mode')}_{args.get('city')}_" \
+                    f"{args.get('min_price')}_{args.get('max_price')}_" \
+                    f"{args.get('sort')}"
 
         # Try cached response
         cached_data = cache.get(cache_key)
@@ -67,39 +72,98 @@ class TaskResource(Resource):
             joinedload(Task.user).joinedload(User.user_info)
         )
 
-        # Apply filters
+        # Apply filters and sorting
         query = self._apply_filters(query, args)
-
-        # Apply sorting
         query = self._apply_sorting(query, args)
 
-        # Pagination
-        paginated = query.paginate(
-            page=args['page'],
-            per_page=args['per_page'],
-            error_out=False
-        )
+        # Decode cursor for keyset pagination
+        cursor_data = None
+        if args['cursor']:
+            try:
+                decoded_cursor = urllib.parse.unquote(args['cursor'])
+                cursor_str = base64.b64decode(decoded_cursor).decode('utf-8')
+                cursor_data = json.loads(cursor_str)
+            except Exception as e:
+                current_app.logger.error(f"Cursor decoding failed: {str(e)}")
+                abort(400, message="Invalid cursor format")
 
-        # Process results
-        tasks = []
-        for task in paginated.items:
-            task_data = self._serialize_task(task, args)
-            tasks.append(task_data)
+        if cursor_data:
+            query = self._apply_cursor(query, args['sort'], cursor_data)
 
-        # Build response
+        # Fetch limit + 1 to check for next page
+        tasks = query.limit(args['limit'] + 1).all()
+
+        next_cursor = None
+        if len(tasks) > args['limit']:
+            tasks = tasks[:args['limit']]
+            next_cursor = self._create_next_cursor(tasks[-1], args['sort'])
+
+        serialized_tasks = [self._serialize_task(t, args) for t in tasks]
+
         response = {
-            'tasks': tasks,
-            'pagination': {
-                'page': paginated.page,
-                'per_page': paginated.per_page,
-                'total_pages': paginated.pages,
-                'total_items': paginated.total
-            }
+            'tasks': serialized_tasks,
+            'next_cursor': next_cursor
         }
 
         # Cache response for 5 minutes
         cache.set(cache_key, response, timeout=300)
         return response
+
+    def _apply_cursor(self, query, sort, cursor_data):
+        """Apply cursor condition based on sort type"""
+        if sort == 'recommended':
+            query = query.join(User).join(UserInfo)
+            score = UserInfo.rating * 0.7 + UserInfo.completion_rate * 0.3
+            return query.filter(
+                (score < cursor_data['score']) |
+                ((score == cursor_data['score']) & (Task.created_at < cursor_data['created_at'])) |
+                ((score == cursor_data['score']) & (Task.created_at == cursor_data['created_at']) &
+                 (Task.id < cursor_data['id']))
+            )
+        elif sort == 'recent':
+            return query.filter(Task.id < cursor_data['id'])
+        elif sort == 'price':
+            return query.filter(
+                (Task.budget < cursor_data['budget']) |
+                ((Task.budget == cursor_data['budget']) & (Task.id < cursor_data['id']))
+            )
+        elif sort == 'due_date':
+            # For due_date we sort by a computed value
+            return query.filter(
+                (Task.specific_date < cursor_data['sort_value']) |
+                ((Task.specific_date == cursor_data['sort_value']) & (Task.id < cursor_data['id']))
+            )
+        elif sort == 'distance':
+            # Distance sorting requires special handling
+            return query.filter(Task.id < cursor_data['id'])
+        else:  # Default to ID-based pagination
+            return query.filter(Task.id < cursor_data['id'])
+
+    def _create_next_cursor(self, task, sort_type):
+        """Create next cursor from last task"""
+        cursor_data = {'id': task.id}
+
+        if sort_type == 'recommended':
+            # Calculate and include score in cursor
+            rating = task.user.user_info.rating if task.user.user_info.rating is not None else 0
+            completion_rate = task.user.user_info.completion_rate if task.user.user_info.completion_rate is not None else 0
+            score = rating * 0.7 + completion_rate * 0.3
+            cursor_data.update({
+                'score': float(score),
+                'created_at': task.created_at.isoformat()
+            })
+        elif sort_type == 'price':
+            cursor_data['budget'] = float(task.budget)
+        elif sort_type == 'due_date':
+            # Use computed due date value
+            if task.schedule_type == 'specific_day' and task.specific_date:
+                cursor_data['sort_value'] = task.specific_date.isoformat()
+            elif task.schedule_type == 'before_day' and task.deadline_date:
+                cursor_data['sort_value'] = task.deadline_date.isoformat()
+            else:
+                cursor_data['sort_value'] = task.created_at.isoformat()
+
+        return base64.b64encode(json.dumps(cursor_data).encode('utf-8')).decode('utf-8')
 
     def _apply_filters(self, query, args):
         # Work mode filter
