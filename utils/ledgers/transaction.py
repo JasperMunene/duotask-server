@@ -2,6 +2,8 @@ from models.transaction_ledger import TransactionLedger
 from flask import current_app
 from decimal import Decimal
 from models import db
+import logging
+logger = logging.getLogger()
 
 class TransactionLedg():
     def __init__(self, reference, sender_id=None, receiver_id=None, system=None, amount=Decimal('0.00'), type=None, status=None, description=None):
@@ -37,5 +39,5 @@ class TransactionLedg():
         
         db.session.add(transaction)
         db.session.commit()
-        
-        print ("created ")
+        print("Transaction ledged successfully")
+        logger.info(f"Transaction {reference} created with amount {amount} and type {type}")

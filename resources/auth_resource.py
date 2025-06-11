@@ -4,7 +4,8 @@ import datetime
 import uuid
 from flask import current_app, make_response, url_for, redirect
 from flask_restful import Resource, reqparse
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
+from utils.send_notification import Notify
 from models import db
 from models.user import User
 from extensions import bcrypt
@@ -489,3 +490,33 @@ class ResetPasswordResource(Resource):
             db.session.rollback()
             current_app.logger.error(f"Password reset error: {str(e)}")
             return {"message": "Failed to update password"}, 500
+        
+class ChangePasswordResource(Resource):
+    @jwt_required()
+    def post(self):
+        parser = reqparse.RequestParser()
+        parser.add_argument('current_password', type=str, required=True, help="Current password is required")
+        parser.add_argument('new_password', type=str, required=True, help="New password is required")
+        args = parser.parse_args()
+
+        current_user_id = get_jwt_identity()
+        user = User.query.get(current_user_id)
+
+        if not user or not bcrypt.check_password_hash(user.password, args['current_password']):
+            return {"message": "Invalid current password"}, 401
+
+        try:
+            user.password = bcrypt.generate_password_hash(args['new_password']).decode('utf-8')
+            db.session.commit()
+            notification = Notify(
+                    user_id=current_user_id,
+                    message="Password changed successfully",
+                    source='security',
+                    is_important=False
+                )
+            notification.post()
+            return {"message": "Password changed successfully"}, 200
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Change password error: {str(e)}")
+            return {"message": "Failed to change password"}, 500

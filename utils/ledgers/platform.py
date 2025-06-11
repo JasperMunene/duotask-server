@@ -2,6 +2,9 @@ from models.FloatWalletLedger import FloatWalletLedger
 from flask import current_app
 from decimal import Decimal
 from models import db
+# import Logger
+import logging
+logger = logging.getLogger()
 
 class FloatLedger():
     def __init__(self, reference, direction=None, amount=None, source=None, destination=None, purpose=None, status=None):
@@ -49,4 +52,6 @@ class FloatLedger():
         db.session.add(ledger)
         db.session.commit()    
 
-        print("float added")
+        print("Float transaction ledged successfully")
+        logger.info(f"Float transaction {reference} created with amount {amount} and direction {direction}")
+       

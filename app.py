@@ -11,10 +11,11 @@ from models import db
 from extensions import bcrypt, socketio
 from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
-    GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource
+    GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
 from resources.conversation_resource import ConversationResource, OlderMessages, ChatResource
+from resources.notifications_list_resource import NotificationsListResource, MarkNotificationRead
 from resources.feedback_resource import Feedback_resource
 from resources.bid_resource import BidsResource
 from resources.user_relation_resource import UserRelations
@@ -25,7 +26,7 @@ from resources.category_resource import CategoryResource,PopularCategoriesResour
 from resources.test_resource import TestFloatLedger
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from resources.mpesa_disbursment_resource import MpesaDisbursmentCallback, MpesaDisbursmentInit
-from resources.push_notification import SubscribePush
+from resources.push_notification import SubscribePush, UnsubscribeToken
 from resources.assignment_resource import TaskAssignResource
 from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, TestPay, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
 from resources.paystack_call_back import Paystack_callback
@@ -48,7 +49,7 @@ def create_app():
         RESEND_API_KEY=os.getenv("RESEND_API_KEY"),
         SQLALCHEMY_DATABASE_URI=os.getenv("CONNECTION_STRING"),
         JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY", "your_jwt_secret_key"),
-        JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=24),
+        JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=72),
         JWT_TOKEN_LOCATION=["cookies"],
         JWT_ACCESS_COOKIE_NAME="access_token",
         JWT_COOKIE_SECURE=True,
@@ -140,6 +141,7 @@ def create_app():
     api.add_resource(ResendOTPResource, '/auth/resend-otp')
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
+    api.add_resource(ChangePasswordResource, '/auth/change-password')
     
     # upload media resource 
     api.add_resource(ImageUploadResource, '/api/media/upload')
@@ -147,6 +149,10 @@ def create_app():
     # User routes
     api.add_resource(UserProfileResource, '/user/profile')
 
+    # notification get routes
+    api.add_resource(NotificationsListResource, '/user/notifications')
+    api.add_resource(MarkNotificationRead, '/user/notifications/<int:notification_id>/read')
+    
     #Category routes
     api.add_resource(CategoryResource, '/categories')
     api.add_resource(PopularCategoriesResource, '/categories/popular')
@@ -188,6 +194,7 @@ def create_app():
     api.add_resource(ReviewResource, '/reviews/<int:review_id>')
     # Push notification route
     api.add_resource(SubscribePush, '/notification/subscribe')
+    api.add_resource(UnsubscribeToken, '/notification/unsubscribe')
 
     # Feedback routes
     api.add_resource(Feedback_resource, '/feedbacks') #post feedback, get /feedback?page={page}&limit={limit}

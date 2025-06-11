@@ -3,6 +3,7 @@ import base64
 import requests
 from flask import request, current_app, jsonify
 from flask_restful import Resource
+from utils.ledgers.platform import FloatLedger
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 from dotenv import load_dotenv
@@ -167,6 +168,16 @@ class MpesaDisbursmentCallback(Resource):
             wallet.balance -= total_deduction
         
         db.session.commit()
+        float = FloatLedger(
+                    transaction_id,
+                    "out",
+                    total_deduction,
+                    "float",
+                    "user",
+                    "user_payout",
+                    "completed"
+                )
+        float.ledge()
         return {
             "message": "Transaction successful",
             "transaction_id": transaction_id,
