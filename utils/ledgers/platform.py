@@ -15,8 +15,7 @@ class FloatLedger():
         self.destination = destination if destination is not None else None
         self.purpose = purpose if purpose is not None else None
         self.status = status if status is not None else None
-        
-        
+                
     def ledge(self):
         reference = self.reference
         direction = self.direction
@@ -53,5 +52,4 @@ class FloatLedger():
         db.session.commit()    
 
         print("Float transaction ledged successfully")
-        logger.info(f"Float transaction {reference} created with amount {amount} and direction {direction}")
-       
+        logger.info(f"Float transaction {reference} created with amount {amount} and direction {direction}")       

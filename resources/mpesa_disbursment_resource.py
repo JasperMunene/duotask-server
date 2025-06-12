@@ -9,7 +9,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 from models import db
+from extensions import socketio
+from utils.send_notification import Notify  
 from models.user_wallet import Wallet
+from models.wallet_transactions import WalletTransaction
 from models.user import User
 import re
 from decimal import Decimal
@@ -38,7 +41,7 @@ class MpesaDisbursmentInit(Resource):
             return {"message": f"Access token generation failed: {str(e)}"}, 500
 
         # Callback URLs (update to your live callback endpoints)
-        base_url = "https://yourdomain.com/api/mpesa"
+        base_url = "https://bgrtfdl5-5000.uks1.devtunnels.ms/api/mpesa"
         timeout_url = f"{base_url}/disbursment/timeout/{user_id}"
         result_url = f"{base_url}/disbursment/callback/{user_id}"
         def format_phone_number(number):
@@ -134,6 +137,7 @@ def calculate_b2c_charge(amount):
     return None
 class MpesaDisbursmentCallback(Resource):
     def post(self, user_id):
+        cache = current_app.cache
         mpesa_response = request.get_json(force=True)
 
         if 'Result' not in mpesa_response or 'ResultCode' not in mpesa_response['Result']:
@@ -167,6 +171,17 @@ class MpesaDisbursmentCallback(Resource):
         else:
             wallet.balance -= total_deduction
         
+        new_transaction = WalletTransaction(
+                    user_id=user_id,
+                    reference_id=transaction_id,
+                    amount=amount,
+                    transaction_date= datetime.utcnow(),
+                    transaction_type="debit",
+                    transaction_fees=Decimal(fee),  # Assuming no fees for this transaction  
+                    description = "Wallet Withdraw to M-Pesa",
+                    status = "success"
+                )
+        db.session.add(new_transaction)
         db.session.commit()
         float = FloatLedger(
                     transaction_id,
@@ -178,6 +193,15 @@ class MpesaDisbursmentCallback(Resource):
                     "completed"
                 )
         float.ledge()
+        receiver_sid = current_app.cache.get(f"user_sid:{user_id}")
+        socketio.emit('withdraw_successfully', {
+            "message": "Transaction successful",
+            "transaction_id": transaction_id,
+            "amount": str(amount)
+        }, room=receiver_sid)                
+        Notify(user_id=user_id, message=f"Withdraw of KES {amount} was successfull Mpesa ref: {transaction_id}", source="wallet", sender_id=user_id).post()
+        
+        cache.delete(f"user_wallet_{user_id}")
         return {
             "message": "Transaction successful",
             "transaction_id": transaction_id,

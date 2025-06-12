@@ -36,7 +36,7 @@ class UserWalletResource(Resource):
         payment_detail = PaymentDetail.query.filter_by(user_id=user_id).first()
         if payment_detail and payment_detail.default_method == 'mpesa':
             payment_method = 'M-Pesa'
-            masked_number = mask_mpesa_number(payment_detail.mpesa_number)
+            masked_number = payment_detail.mpesa_number
         elif payment_detail and payment_detail.default_method == 'card':
             payment_method = 'Card'
             masked_number = '****'
@@ -46,27 +46,32 @@ class UserWalletResource(Resource):
 
         # Transactions
         transactions = WalletTransaction.query \
-            .filter_by(wallet_id=wallet.wallet_id) \
+            .filter_by(user_id=user_id) \
             .order_by(WalletTransaction.transaction_date.desc()) \
             .limit(20) \
             .all()
 
         history = []
-        for txn in transactions:
-            history.append({
-                "date": txn.transaction_date.strftime("%Y-%m-%d %H:%M:%S") if txn.transaction_date else None,
-                "amount": float(txn.amount),
-                "reference": txn.reference_id,
-                "number": masked_number
-            })
+        if transactions:    
+            for txn in transactions:
+                history.append({
+                    "date": txn.transaction_date.strftime("%Y-%m-%d %H:%M:%S") if txn.transaction_date else None,
+                    "reference": txn.reference_id,
+                    "transaction_type": txn.transaction_type,
+                    "amount": float(txn.amount) if txn.amount is not None else 0.0,
+                    "transaction_fees": float(txn.transaction_fees) if txn.transaction_fees is not None else 0.0,
+                    "description": txn.description or "No description",
+                    "number": masked_number
+                })
 
         response = {
-            "balance": float(wallet.balance),
+            "balance": float(wallet.balance) if wallet.balance is not None else 0.0,
             "currency": wallet.currency or "KES",
             "payment_method": payment_method,
-            "masked_number": masked_number,
+            "account_number": masked_number,
             "transactions": history
         }
+
 
         # Cache for 5 minutes
         cache.set(f"user_wallet_{user_id}", response, timeout=300)

@@ -14,6 +14,8 @@ from decimal import Decimal
 from extensions import socketio
 from utils.send_notification import Notify
 from utils.ledgers.platform import FloatLedger
+from models.user import User
+from models.wallet_transactions import WalletTransaction
 # Load environment variables from .env file
 load_dotenv()
 
@@ -122,6 +124,7 @@ class MpesaC2BResource(Resource):
 class MpesaCallbackResource(Resource):
     
     def post(self, user_id):
+        cache = current_app.cache
         data = request.get_json()
         # user_id = request.get
         try:
@@ -154,6 +157,18 @@ class MpesaCallbackResource(Resource):
                     wallet.balance = 0.0
 
                 wallet.balance += amount
+                # create a wallet transaction
+                new_transaction = WalletTransaction(
+                    user_id=user_id,
+                    reference_id=transaction_id,
+                    amount=amount,
+                    transaction_date=datetime.fromtimestamp(transaction_date / 1000) if transaction_date else datetime.utcnow(),
+                    transaction_type="credit",
+                    transaction_fees=Decimal('0.00'),  # Assuming no fees for this transaction  
+                    description = "Wallet Top Up via M-Pesa",
+                    status = "success"
+                )
+                db.session.add(new_transaction)
                 db.session.add(wallet)
                 db.session.commit()
                 
@@ -167,6 +182,9 @@ class MpesaCallbackResource(Resource):
                     "completed"
                 )
                 float.ledge()
+                
+                
+                
                 receiver_sid = current_app.cache.get(f"user_sid:{user_id}")
                 socketio.emit('payment_received', {
                     "message": "Transaction successful",
@@ -175,6 +193,8 @@ class MpesaCallbackResource(Resource):
                     "phone_number": phone_number
                 }, room=receiver_sid)                
                 Notify(user_id=user_id, message=f"Wallet top up of KES {amount} was successfull REF {transaction_id}", source="wallet", sender_id=user_id).post()
+                # invalidate wallet
+                cache.set(f"user_wallet_{user_id}")
                 return {
                     "message": "Transaction successful",
                     "transaction_id": transaction_id,

@@ -64,7 +64,7 @@ class MpesaPaymentResource(Resource):
 
         mpesa_number = data.get("mpesa_number")
         currency = data.get("currency", "KES")
-        otp = data.get("otp")
+        otp = int(data.get("otp"))
 
         if not is_valid_mpesa_number(mpesa_number):
             return {"error": "Invalid M-Pesa number format."}, 400

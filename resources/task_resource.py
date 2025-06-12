@@ -240,7 +240,7 @@ class TaskResource(Resource):
                 'schedule_type',
                 'specific_date',
                 'deadline_date',
-                'created_at',
+                'created_at',   
                 'updated_at',
             )
         )
