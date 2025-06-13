@@ -3,34 +3,43 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import request, current_app
 from models import db
 from models.review import Review
-
+from sqlalchemy.orm import joinedload  # Make sure this is imported
 
 class ReviewListResource(Resource):
     @jwt_required()
     def get(self, user_id):
         page = request.args.get('page', 1, type=int)
         limit = request.args.get('limit', 10, type=int)
-        cache_key = f"reviews:page:{page}:limit:{limit}"
+        cache_key = f"reviews:{user_id}:page:{page}:limit:{limit}"
 
         cached = current_app.cache.get(cache_key)
         if cached:
             return cached, 200
 
-        reviews_query = Review.query.filter_by(reviewee_id = user_id).order_by(Review.created_at.desc())
+        reviews_query = Review.query.options(joinedload(Review.reviewer)).filter_by(
+            reviewee_id=user_id
+        ).order_by(Review.created_at.desc())
+        
         paginated = reviews_query.paginate(page=page, per_page=limit, error_out=False)
 
+        reviews = []
+        for review in paginated.items:
+            reviewer = review.reviewer
+            reviews.append({
+                "review": {
+                    "id": review.id,
+                    "task_assignment_id": review.task_assignment_id,
+                    "reviewer_id": review.reviewer_id,
+                    "reviewee_id": review.reviewee_id,
+                    "rating": review.rating,
+                    "comment": review.comment,
+                    "created_at": review.created_at.isoformat() if review.created_at else None,
+                    "reviewer": _get_user_data(reviewer) if reviewer else None
+                }
+            })
+
         response = {
-            "reviews": [
-                {"review": {
-                        "id": review.id,
-                        "task_assignment_id": review.task_assignment_id,
-                        "reviewer_id": review.reviewer_id,
-                        "reviewee_id": review.reviewee_id,
-                        "rating": review.rating,
-                        "comment": review.comment,
-                        "created_at": review.created_at.isoformat()  # Optional formatting
-                    }
-                } for review in paginated.items],
+            "reviews": reviews,
             "page": page,
             "limit": limit,
             "has_next": paginated.has_next,
@@ -38,9 +47,10 @@ class ReviewListResource(Resource):
             "total": paginated.total
         }
 
-        current_app.cache.set(cache_key, response, timeout=60 * 5)  # Cache for 5 mins
+        current_app.cache.set(cache_key, response, timeout=60 * 5)
 
         return response, 200
+
 
     @jwt_required()
     def post(self):
@@ -74,10 +84,25 @@ class ReviewListResource(Resource):
                     "reviewer_id": review.reviewer_id,
                     "reviewee_id":review.reviewee_id,
                     "rating": review.rating,
-                    "comment": review.comment
+                    "comment": review.comment,
+                    "reviewer": _get_user_data(review.reviewer) if review.reviewer else None
                 }
                 }, 201
 
+def _get_user_data(user):
+    """Helper to extract user data with average rating."""
+    user_reviews = user.reviews_received or []
+    avg_rating = (
+        sum(r.rating for r in user_reviews) / len(user_reviews)
+        if user_reviews else 0.0
+    )
+    return {
+        "id": user.id,
+        "name": user.name,
+        "rating": avg_rating,
+        "completed_tasks": getattr(user, 'completed_tasks_count', 0),
+        "avatar": user.image
+    }
 class ReviewResource(Resource):
     @jwt_required()
     def get(self, review_id):
@@ -94,7 +119,8 @@ class ReviewResource(Resource):
                     "reviewer_id": review.reviewer_id,
                     "reviewee_id":review.reviewee_id,
                     "rating": review.rating,
-                    "comment": review.comment
+                    "comment": review.comment,
+                    "reviewer": _get_user_data(review.reviewer) if review.reviewer else None
                 }
                 }
 

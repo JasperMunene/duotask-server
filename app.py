@@ -198,7 +198,7 @@ def create_app():
     
     # Review routes
     api.add_resource(ReviewListResource, '/reviews', '/reviews/<int:user_id>')
-    api.add_resource(ReviewResource, '/reviews/<int:review_id>')
+    api.add_resource(ReviewResource, '/review/<int:review_id>')
     # Push notification route
     api.add_resource(SubscribePush, '/notification/subscribe')
     api.add_resource(UnsubscribeToken, '/notification/unsubscribe')

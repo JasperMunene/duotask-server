@@ -7,16 +7,22 @@ from models.user import User
 from models.task_assignment import TaskAssignment
 from models.bid import Bid
 from decimal import Decimal
-
+from flask import current_app
 class MyPostedTasksResource(Resource):
     @jwt_required()
     def get(self):
         """Get tasks created by the authenticated user."""
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
+        cache = current_app.cache
 
         if not user:
             abort(404, message="User not found")
+
+        cache_key = f"my_tasks:{user_id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached, 200
 
         tasks = Task.query.filter(Task.user_id == user_id).options(
             joinedload(Task.location),
@@ -29,7 +35,6 @@ class MyPostedTasksResource(Resource):
 
         result = []
         for task in tasks:
-            # Load bids separately with user info
             bid_query = Bid.query.options(joinedload(Bid.user)).filter(Bid.task_id == task.id).all()
 
             task_data = {
@@ -37,7 +42,7 @@ class MyPostedTasksResource(Resource):
                 "status": task.status,
                 "budget": float(task.budget),
                 "work_mode": task.work_mode,
-                "name": task.title,  # Change to task.name if needed
+                "name": task.title,
                 "bids_count": len(bid_query),
                 "bids": [
                     {
@@ -49,19 +54,27 @@ class MyPostedTasksResource(Resource):
             }
             result.append(task_data)
 
+        # Cache the result for 5 minutes
+        cache.set(cache_key, result, timeout=60 * 5)
+
         return result, 200
     
 class PostedTaskResource(Resource):
     @jwt_required()
     def get(self, task_id):
         """Get a task created by the authenticated user."""
+        cache = current_app.cache
         user_id = get_jwt_identity()
-        user = User.query.get(user_id)
 
+        cache_key = f"posted_task:{user_id}:{task_id}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached, 200
+
+        user = User.query.get(user_id)
         if not user:
             abort(404, message="User not found")
 
-        # Fetch task with joined relationships
         task = Task.query.options(
             joinedload(Task.location),
             joinedload(Task.categories),
@@ -86,7 +99,6 @@ class PostedTaskResource(Resource):
             "specific_date": task.specific_date.isoformat() if task.specific_date else None
         }
 
-
         task_location = {} if task.work_mode == "remote" else {
             "latitude": float(task.location.latitude),
             "longitude": float(task.location.longitude),
@@ -101,7 +113,7 @@ class PostedTaskResource(Resource):
             "location": task_location,
         }
 
-        # If task is open, include bids
+        # Include bids if task is open
         if task.status == "open":
             bid_query = Bid.query.options(joinedload(Bid.user)).filter(Bid.task_id == task.id).all()
             result["bids"] = [
@@ -115,15 +127,19 @@ class PostedTaskResource(Resource):
                 for bid in bid_query
             ]
 
-        # If task is in progress, include assigned user data
-        elif task.status == "in_progress" or task.status == "completed":
+        # Include assigned user if task is in progress or completed
+        elif task.status in ["in_progress", "completed"]:
             task_assignment = TaskAssignment.query.filter_by(task_id=task.id).first()
             if task_assignment:
                 assigned_user = User.query.options(joinedload(User.user_info)).get(task_assignment.task_doer)
                 if assigned_user:
                     result["assigned_user"] = _get_user_data(task, assigned_user)
 
+        # Cache the final result
+        cache.set(cache_key, result, timeout=60 * 5)  # cache for 5 minutes
+
         return result, 200
+
 
 
 def _get_user_data(task, user):
@@ -140,11 +156,18 @@ def _get_user_data(task, user):
         'completed_tasks': getattr(user, 'completed_tasks_count', 0),
         'avatar': user.image
     }
-
+    
 class MyAssignedTasksResource(Resource):
     @jwt_required()
     def get(self):
         user_id = get_jwt_identity()
+        cache = current_app.cache
+        cache_key = f"assigned_tasks:{user_id}"
+
+        # Check for cached response
+        cached = cache.get(cache_key)
+        if cached:
+            return cached, 200
 
         # Step 1: Ensure user exists
         user = User.query.get(user_id)
@@ -154,7 +177,9 @@ class MyAssignedTasksResource(Resource):
         # Step 2: Get task assignments for the user
         task_assignments = TaskAssignment.query.filter_by(task_doer=user_id).all()
         if not task_assignments:
-            return {"message": "No task assignments found for this user", "tasks": []}, 200
+            response = {"message": "No task assignments found for this user", "tasks": []}
+            cache.set(cache_key, response, timeout=60 * 5)
+            return response, 200
 
         # Step 3: Get all related tasks in one go
         task_ids = [t.task_id for t in task_assignments]
@@ -180,11 +205,14 @@ class MyAssignedTasksResource(Resource):
                 "task_title": task.title,
                 "task_description": task.description,
                 "schedule_type": task.schedule_type,
-                "specific_date": task.specific_date,
-                "deadline_date": task.deadline_date,
+                "specific_date": task.specific_date.isoformat() if task.specific_date else None,
+                "deadline_date": task.deadline_date.isoformat() if task.deadline_date else None,
                 "preferred_time": task.preferred_time,
                 "work_mode": task.work_mode
             }
             result.append(assignment_data)
 
-        return result, 200
+        response = {"tasks": result}
+        cache.set(cache_key, response, timeout=60 * 5)
+
+        return response, 200

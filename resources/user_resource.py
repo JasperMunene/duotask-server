@@ -5,6 +5,7 @@ from sqlalchemy.orm import joinedload
 from models import db
 from models.user import User
 from models.user_info import UserInfo
+from models.review import Review
 
 
 class UserProfileResource(Resource):
@@ -131,34 +132,78 @@ class UserProfileResource(Resource):
 
 
 
+
 class UserProfile(Resource):
     def get(self, user_id):
+        # Pagination (can be made dynamic)
+        page = 1
+        limit = 10
+
+        cache = current_app.cache
+        cache_key = f"user_profile:{user_id}:page:{page}:limit:{limit}"
+        cached_response = cache.get(cache_key)
+        if cached_response:
+            return cached_response, 200
+
         user = User.query.options(joinedload(User.user_info)).get(user_id)
         if not user:
-            return {"message": "user not found"}
-        return{
+            return {"message": "User not found"}, 404
+
+        reviews_query = Review.query.options(joinedload(Review.reviewer)).filter_by(
+            reviewee_id=user_id
+        ).order_by(Review.created_at.desc())
+        paginated = reviews_query.paginate(page=page, per_page=limit, error_out=False)
+
+        reviews = []
+        for review in paginated.items:
+            reviewer = review.reviewer
+            reviews.append({
+                "id": review.id,
+                "task_assignment_id": review.task_assignment_id,
+                "reviewer_id": review.reviewer_id,
+                "reviewee_id": review.reviewee_id,
+                "rating": review.rating,
+                "comment": review.comment,
+                "created_at": review.created_at.isoformat() if review.created_at else None,
+                "reviewer": _get_user_data(reviewer) if reviewer else None
+            })
+
+        response = {
             "user": _get_user_data(user),
             "basic_info": {
-                "tagline": user.user_info.tagline,
-                "bio": user.user_info.bio
+                "tagline": user.user_info.tagline if user.user_info else None,
+                "bio": user.user_info.bio if user.user_info else None
+            },
+            "reviews": reviews,
+            "pagination": {
+                "page": page,
+                "limit": limit,
+                "has_next": paginated.has_next,
+                "has_prev": paginated.has_prev,
+                "total": paginated.total
             }
         }
-    
+
+        # Cache the response for 5 minutes
+        cache.set(cache_key, response, timeout=60 * 5)
+
+        return response, 200
+
 def _get_user_data(user):
-    """Helper to get assigned user data with average rating."""
-    user_reviews = user.reviews_received
+    """Helper to extract user data with average rating."""
+    user_reviews = user.reviews_received or []
     avg_rating = (
         sum(r.rating for r in user_reviews) / len(user_reviews)
         if user_reviews else 0.0
     )
     return {
-        'id': user.id,
-        'name': user.name,
-        'rating': avg_rating,
-        'completed_tasks': getattr(user, 'completed_tasks_count', 0),
-        'avatar': user.image
+        "id": user.id,
+        "name": user.name,
+        "rating": avg_rating,
+        "completed_tasks": getattr(user, 'completed_tasks_count', 0),
+        "avatar": user.image
     }
-     
+         
 class UserHealthResource(Resource):
     def get(self):
         try:
