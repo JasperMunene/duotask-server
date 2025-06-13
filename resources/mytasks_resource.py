@@ -99,14 +99,18 @@ class PostedTaskResource(Resource):
             "specific_date": task.specific_date.isoformat() if task.specific_date else None
         }
 
-        task_location = {} if task.work_mode == "remote" else {
-            "latitude": float(task.location.latitude),
-            "longitude": float(task.location.longitude),
-            "country": task.location.country,
-            "state": task.location.state,
-            "city": task.location.city,
-            "area": task.location.area
-        }
+        if task.work_mode == "remote" or not task.location:
+            task_location = {}
+        else:
+            task_location = {
+                "latitude": float(task.location.latitude),
+                "longitude": float(task.location.longitude),
+                "country": task.location.country,
+                "state": task.location.state,
+                "city": task.location.city,
+                "area": task.location.area
+            }
+
 
         result = {
             "task": task_data,
