@@ -129,6 +129,36 @@ class UserProfileResource(Resource):
 
         return {"message": "Profile deleted successfully"}, 204
 
+
+
+class UserProfile(Resource):
+    def get(self, user_id):
+        user = User.query.options(joinedload(User.user_info)).get(user_id)
+        if not user:
+            return {"message": "user not found"}
+        return{
+            "user": _get_user_data(user),
+            "basic_info": {
+                "tagline": user.user_info.tagline,
+                "bio": user.user_info.bio
+            }
+        }
+    
+def _get_user_data(user):
+    """Helper to get assigned user data with average rating."""
+    user_reviews = user.reviews_received
+    avg_rating = (
+        sum(r.rating for r in user_reviews) / len(user_reviews)
+        if user_reviews else 0.0
+    )
+    return {
+        'id': user.id,
+        'name': user.name,
+        'rating': avg_rating,
+        'completed_tasks': getattr(user, 'completed_tasks_count', 0),
+        'avatar': user.image
+    }
+     
 class UserHealthResource(Resource):
     def get(self):
         try:

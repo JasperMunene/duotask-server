@@ -12,7 +12,7 @@ from extensions import bcrypt, socketio
 from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
-from resources.user_resource import UserProfileResource, UserHealthResource
+from resources.user_resource import UserProfileResource, UserHealthResource, UserProfile
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
 from resources.conversation_resource import ConversationResource, OlderMessages, ChatResource
 from resources.notifications_list_resource import NotificationsListResource, MarkNotificationRead
@@ -24,6 +24,7 @@ from resources.user_wallet_resource import UserWalletResource
 from resources.category_resource import CategoryResource,PopularCategoriesResource
 
 from resources.test_resource import TestFloatLedger
+from resources.mytasks_resource import MyPostedTasksResource, MyAssignedTasksResource, PostedTaskResource
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from resources.mpesa_disbursment_resource import MpesaDisbursmentCallback, MpesaDisbursmentInit
 from resources.push_notification import SubscribePush, UnsubscribeToken
@@ -148,6 +149,9 @@ def create_app():
     
     # User routes
     api.add_resource(UserProfileResource, '/user/profile')
+    
+    # other user_details
+    api.add_resource(UserProfile,'/user/<int:user_id>')
 
     # notification get routes
     api.add_resource(NotificationsListResource, '/user/notifications')
@@ -162,7 +166,10 @@ def create_app():
     api.add_resource(SingleTaskResource, '/tasks/<int:task_id>')
     api.add_resource(TaskStatusResource, '/tasks/<int:task_id>/status')
     api.add_resource(TaskAssignResource, '/tasks/<int:task_id>/assign')
-
+    api.add_resource(MyPostedTasksResource, '/tasks/my/posted')
+    api.add_resource(PostedTaskResource, '/tasks/posted/<int:task_id>')
+    api.add_resource(MyAssignedTasksResource, '/tasks/my/assigned')
+    
     # Messaging and conversation routes
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')
     api.add_resource(OlderMessages, '/messages/<int:conversation_id>')
