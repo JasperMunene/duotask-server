@@ -144,7 +144,7 @@ class TaskResource(Resource):
         cursor_data = {'id': task.id}
 
         if sort_type == 'recommended':
-            # Calculate and include score in cursor
+             # Calculate and include score in cursor
             rating = task.user.user_info.rating if task.user.user_info.rating is not None else 0
             completion_rate = task.user.user_info.completion_rate if task.user.user_info.completion_rate is not None else 0
             score = rating * 0.7 + completion_rate * 0.3

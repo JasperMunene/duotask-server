@@ -1,5 +1,5 @@
 # Use official Python runtime as a parent image
-FROM python:3.9-slim-buster as base
+FROM python:3.9-slim-buster AS base
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -31,7 +31,7 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-FROM base as production
+FROM base AS production
 
 # Runtime environment variables
 ENV GUNICORN_WORKERS=4
