@@ -5,28 +5,25 @@ from models import db
 from models.category import Category
 import logging
 import time
+from flask import request
 
 logger = logging.getLogger(__name__)
 
 
 class CategoryResource(Resource):
-
     def get(self):
         """
-        Get all categories
+        Get all categories or search categories by name
+
+        Query Params:
+            - q (optional): string to search in category names
+
         Response:
             200: {
-                "categories": [
-                    {
-                        "id": 1,
-                        "name": "Cleaning",
-                        "icon": "cleaning.svg"
-                    },
-                    ...
-                ],
+                "categories": [...],
                 "meta": {
                     "total_categories": 25,
-                    "cache_status": "hit",
+                    "cache_status": "hit" or "miss" or "bypass",
                     "response_time": 0.12
                 }
             }
@@ -34,9 +31,39 @@ class CategoryResource(Resource):
         start_time = time.monotonic()
         cache = current_app.cache
         cache_key = "categories_list"
-        cached_data = cache.get(cache_key)
+        search_query = request.args.get('q', type=str)
 
-        # Return cached data if available
+        # If search query is present, bypass cache
+        if search_query:
+            try:
+                categories = Category.query.filter(
+                    Category.name.ilike(f"%{search_query}%")
+                ).order_by(Category.name).all()
+
+                result = [{
+                    "id": c.id,
+                    "name": c.name,
+                    "icon": c.icon
+                } for c in categories]
+
+                response_time = round(time.monotonic() - start_time, 4)
+                return {
+                    "categories": result,
+                    "meta": {
+                        "total_categories": len(result),
+                        "cache_status": "bypass",
+                        "response_time": response_time
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Failed to search categories: {str(e)}")
+                return {
+                    "error": "Failed to search categories",
+                    "message": str(e)
+                }, 500
+
+        # If no search query, try to return cached data
+        cached_data = cache.get(cache_key)
         if cached_data:
             return {
                 "categories": cached_data,
@@ -48,17 +75,14 @@ class CategoryResource(Resource):
             }
 
         try:
-            # Simple query to get all categories
             categories = Category.query.order_by(Category.name).all()
 
-            # Format results
             result = [{
                 "id": c.id,
                 "name": c.name,
                 "icon": c.icon
             } for c in categories]
 
-            # Cache results for 1 hour
             cache.set(cache_key, result, timeout=3600)
 
             response_time = round(time.monotonic() - start_time, 4)
