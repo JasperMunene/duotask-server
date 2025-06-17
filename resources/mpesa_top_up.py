@@ -42,12 +42,12 @@ class MpesaC2BResource(Resource):
         data = request.get_json()
         phone_number = data.get("phone_number")
         amount = data.get("amount")
-        call_back_url = f"https://bgrtfdl5-5000.uks1.devtunnels.ms/payment/mpesa/call_back/{user_id}"
+        call_back_url = f"https://bgrtfdl5-5000.uks1.devtunnels.ms/payments/mpesa/call_back/{user_id}"
         if not phone_number or not amount:
             return {"message": "Missing phone number or amount"}, 400
 
         def format_phone_number(number):
-            # Remove all non-digit characters
+            # Remove all non-digit characters   
             digits = re.sub(r'\D', '', number)
 
             # Case 1: Starts with +254 or 254
@@ -120,58 +120,52 @@ class MpesaC2BResource(Resource):
             return auth_token
         return None
 
-
 class MpesaCallbackResource(Resource):
     
     def post(self, user_id):
         cache = current_app.cache
         data = request.get_json()
-        # user_id = request.get
+
         try:
             stk = data['Body']['stkCallback']
             merchant_request_id = stk.get('MerchantRequestID')
             checkout_request_id = stk.get('CheckoutRequestID')
             result_code = stk.get('ResultCode')
-            
+            result_desc = stk.get('ResultDesc')
 
             if result_code == 0:
-                result_desc = stk.get('ResultDesc')
                 metadata = stk.get('CallbackMetadata', {}).get('Item', [])
                 parsed_metadata = {item['Name']: item.get('Value') for item in metadata}
-                amount = parsed_metadata.get("Amount")
                 amount = Decimal(str(parsed_metadata.get("Amount")))
                 transaction_id = parsed_metadata.get("MpesaReceiptNumber")
                 transaction_date = parsed_metadata.get("TransactionDate")
                 phone_number = parsed_metadata.get("PhoneNumber")
-                # You must define how to find user_id from phone_number or transaction ID
 
                 if not user_id:
                     return {"message": "User not found", "phone": phone_number}, 404
 
                 wallet = Wallet.query.filter_by(user_id=user_id).first()
-
                 if not wallet:
                     wallet = Wallet(user_id=user_id)
-
                 if wallet.balance is None:
                     wallet.balance = 0.0
-
                 wallet.balance += amount
-                # create a wallet transaction
+
                 new_transaction = WalletTransaction(
                     user_id=user_id,
                     reference_id=transaction_id,
                     amount=amount,
                     transaction_date=datetime.fromtimestamp(transaction_date / 1000) if transaction_date else datetime.utcnow(),
                     transaction_type="credit",
-                    transaction_fees=Decimal('0.00'),  # Assuming no fees for this transaction  
-                    description = "Wallet Top Up via M-Pesa",
-                    status = "success"
+                    transaction_fees=Decimal('0.00'),
+                    description="Wallet Top Up via M-Pesa",
+                    status="success"
                 )
-                db.session.add(new_transaction)
+
                 db.session.add(wallet)
+                db.session.add(new_transaction)
                 db.session.commit()
-                
+
                 float = FloatLedger(
                     transaction_id,
                     "in",
@@ -182,19 +176,18 @@ class MpesaCallbackResource(Resource):
                     "completed"
                 )
                 float.ledge()
-                
-                
-                
-                receiver_sid = current_app.cache.get(f"user_sid:{user_id}")
+
+                receiver_sid = cache.get(f"user_sid:{user_id}")
                 socketio.emit('payment_received', {
                     "message": "Transaction successful",
                     "transaction_id": transaction_id,
                     "amount": str(amount),
                     "phone_number": phone_number
-                }, room=receiver_sid)                
-                Notify(user_id=user_id, message=f"Wallet top up of KES {amount} was successfull REF {transaction_id}", source="wallet", sender_id=user_id).post()
-                # invalidate wallet
-                cache.set(f"user_wallet_{user_id}")
+                }, room=receiver_sid)
+
+                Notify(user_id=user_id, message=f"Wallet top-up of KES {amount} was successful. REF: {transaction_id}", source="wallet", sender_id=user_id).post()
+
+                cache.delete(f"user_wallet_{user_id}")
                 return {
                     "message": "Transaction successful",
                     "transaction_id": transaction_id,
@@ -203,10 +196,21 @@ class MpesaCallbackResource(Resource):
                 }, 200
 
             else:
+                # Notify user via socket if payment failed
+                receiver_sid = cache.get(f"user_sid:{user_id}")
+                socketio.emit('payment_failed', {
+                    "message": "Transaction failed",
+                    "reason": result_desc,
+                    "code": result_code
+                }, room=receiver_sid)
+
                 return {
-                    "message": "Transaction failed"
+                    "message": "Transaction failed",
+                    "reason": result_desc,
+                    "code": result_code
                 }, 400
 
         except Exception as e:
-            print(str(e))
-            return {"error": str(e)}, 500
+            db.session.rollback()
+            current_app.logger.error(f"M-Pesa callback error: {e}", exc_info=True)
+            return {"error": "Internal server error"}, 500

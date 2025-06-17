@@ -135,6 +135,7 @@ def calculate_b2c_charge(amount):
         if min_amt <= amount <= max_amt:
             return fee
     return None
+
 class MpesaDisbursmentCallback(Resource):
     def post(self, user_id):
         cache = current_app.cache
@@ -143,67 +144,87 @@ class MpesaDisbursmentCallback(Resource):
         if 'Result' not in mpesa_response or 'ResultCode' not in mpesa_response['Result']:
             return {'message': 'Invalid M-PESA callback'}, 400
 
+        try:
+            result = mpesa_response['Result']
+            transaction_id = result.get('TransactionID')
+            params = result.get('ResultParameters', {}).get('ResultParameter', [])
+            amount = next((param['Value'] for param in params if param['Key'] == 'TransactionAmount'), 0)
+            receiver_info = next((param['Value'] for param in params if param['Key'] == 'ReceiverPartyPublicName'), '')
+            match = re.search(r'\d+', receiver_info)
 
-        result = mpesa_response['Result']
-        transaction_id = result.get('TransactionID')
-        params = result.get('ResultParameters', {}).get('ResultParameter', [])
-        amount = next((param['Value'] for param in params if param['Key'] == 'TransactionAmount'), 0)
-        receiver_info = next((param['Value'] for param in params if param['Key'] == 'ReceiverPartyPublicName'), '')
-        match = re.search(r'\d+', receiver_info)
-        amount = Decimal(str(amount))
-        fee = calculate_b2c_charge(amount)
-        total_deduction = Decimal(str(int(amount) + fee if fee is not None else amount))
-        
-        user = User.query.get(user_id)
-        
-        if not user:
-            return{"message":"user not found"}, 404
-        
-        wallet = Wallet.query.filter_by(user_id = user_id).first()
-        
-        if not wallet:
-            amount = total_deduction * -1
-            wallet = Wallet(
-                user_id= user_id,
-                amount= total_deduction,
-            )
-            db.session.add(wallet)
-        else:
-            wallet.balance -= total_deduction
-        
-        new_transaction = WalletTransaction(
+            amount = Decimal(str(amount))
+            fee = calculate_b2c_charge(amount)
+            total_deduction = Decimal(str(int(amount) + fee if fee is not None else amount))
+
+            user = User.query.get(user_id)
+            if not user:
+                return {"message": "User not found"}, 404
+
+            wallet = Wallet.query.filter_by(user_id=user_id).first()
+
+            if not wallet:
+                wallet = Wallet(
                     user_id=user_id,
-                    reference_id=transaction_id,
-                    amount=amount,
-                    transaction_date= datetime.utcnow(),
-                    transaction_type="debit",
-                    transaction_fees=Decimal(fee),  # Assuming no fees for this transaction  
-                    description = "Wallet Withdraw to M-Pesa",
-                    status = "success"
+                    balance=-total_deduction
                 )
-        db.session.add(new_transaction)
-        db.session.commit()
-        float = FloatLedger(
-                    transaction_id,
-                    "out",
-                    total_deduction,
-                    "float",
-                    "user",
-                    "user_payout",
-                    "completed"
-                )
-        float.ledge()
-        receiver_sid = current_app.cache.get(f"user_sid:{user_id}")
-        socketio.emit('withdraw_successfully', {
-            "message": "Transaction successful",
-            "transaction_id": transaction_id,
-            "amount": str(amount)
-        }, room=receiver_sid)                
-        Notify(user_id=user_id, message=f"Withdraw of KES {amount} was successfull Mpesa ref: {transaction_id}", source="wallet", sender_id=user_id).post()
-        
-        cache.delete(f"user_wallet_{user_id}")
-        return {
-            "message": "Transaction successful",
-            "transaction_id": transaction_id,
-            "amount": str(total_deduction)
-        }, 200
+                db.session.add(wallet)
+            else:
+                wallet.balance -= total_deduction
+
+            new_transaction = WalletTransaction(
+                user_id=user_id,
+                reference_id=transaction_id,
+                amount=amount,
+                transaction_date=datetime.utcnow(),
+                transaction_type="debit",
+                transaction_fees=Decimal(fee),
+                description="Wallet Withdraw to M-Pesa",
+                status="success"
+            )
+            db.session.add(new_transaction)
+
+            db.session.commit()
+
+            # Float ledger entry
+            float = FloatLedger(
+                transaction_id,
+                "out",
+                total_deduction,
+                "float",
+                "user",
+                "user_payout",
+                "completed"
+            )
+            float.ledge()
+
+            # Realtime socket notification
+            receiver_sid = cache.get(f"user_sid:{user_id}")
+            socketio.emit('withdraw_successfully', {
+                "message": "Transaction successful",
+                "transaction_id": transaction_id,
+                "amount": str(amount)
+            }, room=receiver_sid)
+
+            # Send platform notification
+            Notify(
+                user_id=user_id,
+                message=f"Withdraw of KES {amount} was successful. M-Pesa ref: {transaction_id}",
+                source="wallet",
+                sender_id=user_id
+            ).post()
+
+            # Invalidate wallet cache
+            cache.delete(f"user_wallet_{user_id}")
+
+            return {
+                "message": "Transaction successful",
+                "transaction_id": transaction_id,
+                "amount": str(total_deduction)
+            }, 200
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"M-Pesa disbursement callback failed: {e}", exc_info=True)
+            return {
+                "message": "Internal server error while processing disbursement"
+            }, 500

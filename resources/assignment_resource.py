@@ -9,65 +9,35 @@ from models.task_assignment import TaskAssignment
 from models.conversation import Conversation
 from models.message import Message
 from models.user import User
-
+from utils.exceptions import InsufficientBalanceError
+from utils.ledgers.internal import InternalTransfer
 import logging
 
 logger = logging.getLogger(__name__)
 
 class TaskAssignResource(Resource):
     parser = reqparse.RequestParser()
-    parser.add_argument(
-        'bid_id',
-        type=int,
-        required=True,
-        help="Bid ID to accept is required"
-    )
+    parser.add_argument('bid_id', type=int, required=True, help="Bid ID to accept is required")
 
     @jwt_required()
     def post(self, task_id):
-        # Parse and validate JWT identity
-        raw_identity = get_jwt_identity()
-        try:
-            user_id = int(raw_identity)
-        except (TypeError, ValueError):
-            abort(403, message="Invalid user identity")
-
-        # Parse request arguments
+        user_id = self._get_current_user_id()
         args = self.parser.parse_args()
         bid_id = args['bid_id']
 
-        # Fetch and validate task
-        task = Task.query.get(task_id)
-        if not task or getattr(task, 'is_deleted', False):
-            abort(404, message="Task not found")
-        if task.user_id != user_id:
-            abort(403, message="Unauthorized to assign this task")
-        if task.status != 'open':
-            abort(409, message="Task is not open for assignment")
-
-        # Fetch and validate bid
-        bid = Bid.query.filter_by(id=bid_id, task_id=task_id).first()
-        if not bid:
-            abort(404, message="Bid not found for this task")
-        if bid.status != 'pending':
-            abort(409, message="Bid is not in a pending state")
-
-        # Ensure no existing assignment
-        if TaskAssignment.query.filter_by(task_id=task_id).first():
-            abort(409, message="Task already assigned")
+        task = self._get_task(task_id, user_id)
+        bid = self._get_bid(task_id, bid_id)
+        self._ensure_task_not_already_assigned(task_id)
 
         try:
-            # Collect other pending bids before state updates
-            other_bids = Bid.query.filter(
-                and_(
-                    Bid.task_id == task_id,
-                    Bid.status == 'pending',
-                    Bid.id != bid_id
-                )
-            ).all()
-            rejected_user_ids = [b.user_id for b in other_bids]
+            rejected_user_ids = self._get_rejected_user_ids(task_id, bid_id)
 
-            # Create assignment
+
+             # 🟡 Check balance and hold funds
+            transfer = InternalTransfer(task_id, task.title, user_id, bid.user_id, bid.amount)
+            transfer.hold_funds()
+        
+            # 🟢 Proceed with task assignment if funds were held
             assignment = TaskAssignment(
                 task_id=task_id,
                 task_giver=user_id,
@@ -77,57 +47,89 @@ class TaskAssignResource(Resource):
                 status='assigned'
             )
             db.session.add(assignment)
-            conversation = Conversation(task_giver=user_id, task_doer=bid.user_id)
 
-            
-            
-            # Create the default message for task_doer
-            message = Message(
-                conversation=conversation,
-                sender_id=user_id,
-                reciever_id=bid.user_id,
-                message="Hello, let's start the conversation.",
-                date_time=db.func.now()
-            )
 
-            # Add the conversation and the message to the session and commit
+            conversation = self._create_conversation(user_id, bid.user_id, task.id)
             db.session.add(conversation)
-            db.session.add(message)
-            
-            
-            # Update accepted bid and task status
+
             bid.status = 'accepted'
             task.status = 'assigned'
 
-            # Reject other pending bids
             Bid.query.filter(
-                and_(
-                    Bid.task_id == task_id,
-                    Bid.status == 'pending',
-                    Bid.id != bid_id
-                )
+                and_(Bid.task_id == task_id, Bid.status == 'pending', Bid.id != bid_id)
             ).update({'status': 'rejected'}, synchronize_session=False)
 
-            # Commit all changes atomically
             db.session.commit()
-
-            # Invalidate caches and send notifications
             self._invalidate_caches(task_id)
             self._notify_parties(task, bid, rejected_user_ids)
-        
+
             return {
                 'message': 'Task assigned successfully',
                 'assignment_id': assignment.id,
                 'task_status': task.status
             }, 200
 
+        except InsufficientBalanceError as e:
+            db.session.rollback()
+            amount_needed = float(e.required_amount - e.current_balance)
+            return {
+                'error': 'Insufficient balance',
+                'required_funding': round(amount_needed, 2),
+                'message': f'You need KES {amount_needed:.2f} more to assign this task'
+            }, 402
+            
         except Exception as e:
             db.session.rollback()
             logger.error(f"Task assignment failed: {e}", exc_info=True)
             abort(500, message="Internal server error during assignment")
 
+    def _get_current_user_id(self):
+        try:
+            return int(get_jwt_identity())
+        except (TypeError, ValueError):
+            abort(403, message="Invalid user identity")
+
+    def _get_task(self, task_id, user_id):
+        task = Task.query.get(task_id)
+        if not task or getattr(task, 'is_deleted', False):
+            abort(404, message="Task not found")
+        if task.user_id != user_id:
+            abort(403, message="Unauthorized to assign this task")
+        if task.status != 'open':
+            abort(409, message="Task is not open for assignment")
+        return task
+
+    def _get_bid(self, task_id, bid_id):
+        bid = Bid.query.filter_by(id=bid_id, task_id=task_id).first()
+        if not bid:
+            abort(404, message="Bid not found for this task")
+        if bid.status != 'pending':
+            abort(409, message="Bid is not in a pending state")
+        return bid
+
+    def _ensure_task_not_already_assigned(self, task_id):
+        if TaskAssignment.query.filter_by(task_id=task_id).first():
+            abort(409, message="Task already assigned")
+
+    def _get_rejected_user_ids(self, task_id, bid_id):
+        other_bids = Bid.query.filter(
+            and_(Bid.task_id == task_id, Bid.status == 'pending', Bid.id != bid_id)
+        ).all()
+        return [b.user_id for b in other_bids]
+
+    def _create_conversation(self, sender_id, receiver_id, task_id):
+        conversation = Conversation(task_giver=sender_id, task_id = task_id, task_doer=receiver_id)
+        message = Message(
+            conversation=conversation,
+            sender_id=sender_id,
+            reciever_id=receiver_id,
+            message="Hello, let's start the conversation.",
+            date_time=db.func.now()
+        )
+        db.session.add(message)
+        return conversation
+
     def _invalidate_caches(self, task_id):
-        """Invalidate cached data related to task and bids"""
         try:
             redis_cli = current_app.redis
             for key in redis_cli.scan_iter(f"task_bids_{task_id}_*"):
@@ -137,22 +139,17 @@ class TaskAssignResource(Resource):
             logger.error(f"Cache invalidation failed: {e}")
 
     def _notify_parties(self, task, bid, rejected_user_ids):
-        """Handle all notification logic through Celery"""
         try:
-            # Notify accepted bidder
             current_app.celery.send_task(
                 'notifications.task_assigned',
                 args=(task.id, bid.user_id, task.user_id),
                 queue='notifications'
             )
-            # Notify rejected bidders
             if rejected_user_ids:
                 current_app.celery.send_task(
                     'notifications.bid_rejected',
-                    # task_id, rejected_user_ids, task.user_id -> the owner who created the task
                     args=(task.id, list(set(rejected_user_ids)), task.user_id),
                     queue='notifications'
                 )
         except Exception as e:
             logger.error(f"Notification system error: {e}")
-
