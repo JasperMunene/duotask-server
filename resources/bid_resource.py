@@ -214,8 +214,8 @@ class BidsResource(Resource):
 
         budget = float(task_budget)
 
-        # Upper bound
-        if bid_amount > budget:
+        # lower bound
+        if bid_amount < budget:
             raise ValueError("Bid amount exceeds task budget")
 
         # Lower bound via config (default 50%)

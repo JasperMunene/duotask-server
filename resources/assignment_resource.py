@@ -79,6 +79,8 @@ class TaskAssignResource(Resource):
             db.session.add(assignment)
             conversation = Conversation(task_giver=user_id, task_doer=bid.user_id)
 
+            
+            
             # Create the default message for task_doer
             message = Message(
                 conversation=conversation,

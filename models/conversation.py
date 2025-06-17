@@ -11,6 +11,7 @@ class Conversation(db.Model, SerializerMixin):
     id = db.Column(db.Integer, primary_key=True)
     task_giver = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     task_doer = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=True)
     last_msg_id_giver = db.Column(db.Integer, nullable=True)
     last_msg_id_doer = db.Column(db.Integer, nullable=True)
 

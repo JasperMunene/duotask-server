@@ -184,11 +184,11 @@ class TaskResource(Resource):
         if args['city'] or (args['radius'] and args['lat'] and args['lon']):
             query = query.join(TaskLocation)
         if args['city']:
-            # Apply the filter using an OR condition for city OR area
+            city_filter = f"%{args['city'].lower()}%"
             query = query.filter(
                 or_(
-                    func.lower(TaskLocation.city) == func.lower(args['city']),
-                    func.lower(TaskLocation.area) == func.lower(args['city'])
+                    func.lower(TaskLocation.city).ilike(city_filter),
+                    func.lower(TaskLocation.area).ilike(city_filter)
                 )
             )
         if args['radius'] and args['lat'] and args['lon']:
@@ -343,6 +343,8 @@ class TaskResource(Resource):
 
         except Exception as e:
             db.session.rollback()
+            
+            print(f"error: {str(e)}")
             logger.error(f"Task creation failed: {str(e)}", exc_info=True)
             abort(500, message="Failed to create task")
 

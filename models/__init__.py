@@ -39,3 +39,4 @@ from models.feedback import Feedback
 from models.FloatWalletLedger import FloatWalletLedger
 from models.transaction_ledger import TransactionLedger
 from models.wallet_transactions import WalletTransaction
+from models.internal_transactions import InternalTransaction

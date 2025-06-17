@@ -59,6 +59,46 @@ def new_bid(self, user_id, bid_id, sender_id):
             # Retry the task if it fails.
             raise self.retry(exc=exc)
 
+@celery.task(bind=True, max_retries=3, default_retry_delay=30)
+def bid_rejected_single(self, task_id, user_id, sender_id):
+    """
+    Notify a single user that their bid for a task was rejected.
+    """
+    app = create_app()
+    with app.app_context():
+        try:
+            task = Task.query.get(task_id)
+            if not task:
+                logger.error(f"Task with ID {task_id} not found.")
+                return
+
+            bid = Bid.query.filter_by(task_id=task_id, user_id=user_id).first()
+            if not bid:
+                logger.warning(f"No bid found for task {task_id} by user {user_id}.")
+                return
+
+            bidder = User.query.get(user_id)
+            bidder_name = bidder.name.split()[0] if bidder and bidder.name else "User"
+
+            message = (
+                f"Hi {bidder_name}, your bid for the task '{task.title}' "
+                f"has been rejected. Bid amount: {bid.amount}. Thank you for your interest."
+            )
+
+            notification = Notify(
+                user_id=user_id,
+                message=message,
+                source='bid',
+                is_important=True,
+                sender_id=sender_id
+            )
+            notification.post()
+
+            logger.info(f"Rejected bid notification sent to user {user_id} (bid ID {bid.id}).")
+
+        except Exception as exc:
+            logger.error(f"Failed to send rejected bid notification to user {user_id}: {exc}")
+            raise self.retry(exc=exc)
 
 
 @celery.task(bind=True, max_retries=3, default_retry_delay=30)

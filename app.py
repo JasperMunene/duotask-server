@@ -25,6 +25,7 @@ from resources.category_resource import CategoryResource,PopularCategoriesResour
 
 from resources.test_resource import TestFloatLedger
 from resources.mytasks_resource import MyPostedTasksResource, MyAssignedTasksResource, PostedTaskResource
+from resources.reject_bid_manualy import BidRejectResource
 from resources.mpesa_top_up import MpesaC2BResource, MpesaCallbackResource
 from resources.mpesa_disbursment_resource import MpesaDisbursmentCallback, MpesaDisbursmentInit
 from resources.push_notification import SubscribePush, UnsubscribeToken
@@ -36,6 +37,7 @@ from resources.upload_media_resource import ImageUploadResource
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 import threading
+import ssl
 import socket_events
 # Load environment variables from .env file
 load_dotenv()
@@ -61,13 +63,13 @@ def create_app():
 
         # Caching config
         CACHE_TYPE="RedisCache",
-        CACHE_REDIS_URL=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        CACHE_REDIS_URL=os.getenv("REDIS_sURL", "redis://localhost:6379/0"),
         CACHE_DEFAULT_TIMEOUT=300,
         PROFILE_CACHE_TTL=300,
 
         # Celery config
-        CELERY_BROKER_URL=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-        CELERY_RESULT_BACKEND=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
+        CELERY_BROKER_URL=os.getenv('REDIS_sURL', 'redis://localhost:6379/0'),
+        CELERY_RESULT_BACKEND=os.getenv('REDIS_sURL', 'redis://localhost:6379/0'),
         CELERY_TASK_SERIALIZER='json',
         CELERY_RESULT_SERIALIZER='json',
         CELERY_ACCEPT_CONTENT=['json'],
@@ -86,17 +88,56 @@ def create_app():
     jwt = JWTManager(app)              # JWT authentication
     socketio.init_app(app, cors_allowed_origins="*")  # Real-time communication
 
-    # Initialize caching and Redis
+    
+    # Set up cache
     cache = Cache(app)
     app.cache = cache
-    app.redis = redis.Redis.from_url(app.config["CACHE_REDIS_URL"], decode_responses=True)
 
-    # Lock to prevent race conditions (e.g. when creating categories)
+    redis_url = app.config["CACHE_REDIS_URL"]
+
+    # Set up Redis connection
+    redis_connection_kwargs = {
+    "decode_responses": True
+    }
+
+    # Only add SSL options if using rediss://
+    if redis_url.startswith("rediss://"):
+        redis_connection_kwargs["ssl"] = True
+        redis_connection_kwargs["ssl_cert_reqs"] = ssl.CERT_NONE
+
+    app.redis = redis.Redis.from_url(
+        redis_url,
+        **redis_connection_kwargs
+    )
+
+    # Lock to prevent race conditions   
     app.category_lock = threading.Lock()
 
-    # Configure Celery for background tasks
+    # ✅ All keys in UPPERCASE
+    app.config.update(
+        CELERY_BROKER_URL= app.config["CELERY_BROKER_URL"],
+        CELERY_RESULT_BACKEND=app.config["CELERY_RESULT_BACKEND"],
+        BROKER_USE_SSL={"ssl_cert_reqs": ssl.CERT_NONE},
+        CELERY_REDIS_BACKEND_USE_SSL={"ssl_cert_reqs": ssl.CERT_NONE}
+    )
+
+    # Initialize Celery
     celery = Celery(app.import_name)
-    celery.conf.update(app.config)
+    celery.conf.update(
+        broker_url=app.config["CELERY_BROKER_URL"],
+        result_backend=app.config["CELERY_RESULT_BACKEND"],
+        task_serializer='json',
+        result_serializer='json',
+        accept_content=['json'],
+        timezone='UTC',
+        enable_utc=True
+    )
+
+    # Optional: Configure SSL if using rediss://
+    if app.config["CELERY_BROKER_URL"].startswith("rediss://"):
+        celery.conf.broker_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
+        celery.conf.redis_backend_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
+
     app.celery = celery
 
     # Enable CORS for cross-origin requests
@@ -178,6 +219,8 @@ def create_app():
     # Bidding and user relation routes
     api.add_resource(BidsResource, '/tasks/<int:task_id>/bids')
     api.add_resource(UserRelations, '/user-relations', '/user-relations/<int:other_user_id>')
+    api.add_resource(BidRejectResource, "/tasks/<int:task_id>/reject_bid")
+
 
     # Wallet and payments
     api.add_resource(UserWalletResource, "/wallet")

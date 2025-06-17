@@ -126,7 +126,8 @@ class PostedTaskResource(Resource):
                     "bidder_name": bid.user.name,
                     "bidder_id": bid.user.id,
                     "bid_id": bid.id,
-                    "bid_text": bid.message
+                    "bid_text": bid.message,
+                    "bid_amount": float(bid.amount)
                 }
                 for bid in bid_query
             ]
