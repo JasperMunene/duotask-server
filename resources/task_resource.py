@@ -1,7 +1,7 @@
 from flask_restful import Resource, reqparse, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
-from sqlalchemy import func, case
+from sqlalchemy import func, case, or_
 from sqlalchemy.orm import joinedload
 from models import db
 from models.task import Task
@@ -184,7 +184,13 @@ class TaskResource(Resource):
         if args['city'] or (args['radius'] and args['lat'] and args['lon']):
             query = query.join(TaskLocation)
         if args['city']:
-            query = query.filter(func.lower(TaskLocation.city) == func.lower(args['city']))
+            # Apply the filter using an OR condition for city OR area
+            query = query.filter(
+                or_(
+                    func.lower(TaskLocation.city) == func.lower(args['city']),
+                    func.lower(TaskLocation.area) == func.lower(args['city'])
+                )
+            )
         if args['radius'] and args['lat'] and args['lon']:
             query = query.filter(
                 TaskLocation.latitude.between(
@@ -255,7 +261,7 @@ class TaskResource(Resource):
 
 
         # 3) same for categories
-        serialized['categories'] = [
+        serialized['categories'] = [        
             c.to_dict(only=('id', 'name')) for c in task.categories
         ]
 
