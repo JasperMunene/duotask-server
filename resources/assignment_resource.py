@@ -59,8 +59,10 @@ class TaskAssignResource(Resource):
                 and_(Bid.task_id == task_id, Bid.status == 'pending', Bid.id != bid_id)
             ).update({'status': 'rejected'}, synchronize_session=False)
 
+
             db.session.commit()
-            self._invalidate_caches(task_id)
+            ids = [task.user_id, bid.user_id]
+            self._invalidate_caches(task_id, ids)
             self._notify_parties(task, bid, rejected_user_ids)
 
             return {
@@ -129,12 +131,15 @@ class TaskAssignResource(Resource):
         db.session.add(message)
         return conversation
 
-    def _invalidate_caches(self, task_id):
+    def _invalidate_caches(self, task_id, user_ids):
         try:
             redis_cli = current_app.redis
             for key in redis_cli.scan_iter(f"task_bids_{task_id}_*"):
                 redis_cli.delete(key)
             redis_cli.delete(f"task_{task_id}")
+            cache = current_app.cash
+            for user_id in user_ids:
+                cache.delete(f"conversations_user_{user_id}")
         except Exception as e:
             logger.error(f"Cache invalidation failed: {e}")
 

@@ -6,8 +6,8 @@ from models.task import Task
 from models.user import User
 from models.task_assignment import TaskAssignment
 from models.bid import Bid
-from decimal import Decimal
 from flask import current_app
+
 class MyPostedTasksResource(Resource):
     @jwt_required()
     def get(self):
@@ -24,7 +24,7 @@ class MyPostedTasksResource(Resource):
         if cached:
             return cached, 200
 
-        tasks = Task.query.filter(Task.user_id == user_id).options(
+        tasks = Task.query.filter_by(user_id=user_id).options(
             joinedload(Task.location),
             joinedload(Task.categories),
             joinedload(Task.images),
@@ -35,29 +35,48 @@ class MyPostedTasksResource(Resource):
 
         result = []
         for task in tasks:
-            bid_query = Bid.query.options(joinedload(Bid.user)).filter(Bid.task_id == task.id).all()
-
             task_data = {
                 "id": task.id,
                 "status": task.status,
-                "budget": float(task.budget),
+                "budget": float(task.budget or 0),
                 "work_mode": task.work_mode,
                 "name": task.title,
-                "bids_count": len(bid_query),
-                "bids": [
+            }
+
+            # If task has been assigned
+            if task.status not in ["open", "canceled"]:
+                assignment = TaskAssignment.query.options(
+                    joinedload(TaskAssignment.doer)
+                ).filter_by(task_id=task.id).first()
+
+                if assignment:
+                    task_data["assignment"] = {
+                        "id": assignment.id,
+                        "status": assignment.status,
+                        "task_doer": {
+                            "id": assignment.doer.id,
+                            "name": assignment.doer.name,
+                            "image": assignment.doer.image
+                        } if assignment.doer else None,
+                        "agreed_price": float(assignment.agreed_price or 0)
+                    }
+            else:
+                # If task is still open, include bids
+                bids = Bid.query.options(joinedload(Bid.user)).filter_by(task_id=task.id).all()
+                task_data["bids_count"] = len(bids)
+                task_data["bids"] = [
                     {
                         "price": float(bid.amount),
                         "bidder_image": bid.user.image if bid.user else None
-                    }
-                    for bid in bid_query
+                    } for bid in bids
                 ]
-            }
+
             result.append(task_data)
 
         # Cache the result for 5 minutes
         cache.set(cache_key, result, timeout=60 * 5)
-
         return result, 200
+
     
 class PostedTaskResource(Resource):
     @jwt_required()
@@ -99,6 +118,25 @@ class PostedTaskResource(Resource):
             "specific_date": task.specific_date.isoformat() if task.specific_date else None
         }
 
+        # --- Include assignment data ---
+        if task.status not in ["open", "canceled"]:
+            assignment = TaskAssignment.query.options(
+                joinedload(TaskAssignment.doer)
+            ).filter_by(task_id=task.id).first()
+
+            if assignment:
+                task_data["assignment"] = {
+                    "id": assignment.id,
+                    "status": assignment.status,
+                    "task_doer": {
+                        "id": assignment.doer.id,
+                        "name": assignment.doer.name,
+                        "image": assignment.doer.image
+                    } if assignment.doer else None,
+                    "agreed_price": float(assignment.agreed_price or 0)
+                }
+
+        # --- Location ---
         if task.work_mode == "remote" or not task.location:
             task_location = {}
         else:
@@ -111,13 +149,12 @@ class PostedTaskResource(Resource):
                 "area": task.location.area
             }
 
-
         result = {
             "task": task_data,
             "location": task_location,
         }
 
-        # Include bids if task is open
+        # --- Bids if open ---
         if task.status == "open":
             bid_query = Bid.query.options(joinedload(Bid.user)).filter(Bid.task_id == task.id).all()
             result["bids"] = [
@@ -132,7 +169,7 @@ class PostedTaskResource(Resource):
                 for bid in bid_query
             ]
 
-        # Include assigned user if task is in progress or completed
+        # --- Assigned user info if applicable ---
         elif task.status in ["in_progress", "completed"]:
             task_assignment = TaskAssignment.query.filter_by(task_id=task.id).first()
             if task_assignment:
@@ -140,10 +177,11 @@ class PostedTaskResource(Resource):
                 if assigned_user:
                     result["assigned_user"] = _get_user_data(task, assigned_user)
 
-        # Cache the final result
+        # --- Cache and return ---
         cache.set(cache_key, result, timeout=60 * 5)  # cache for 5 minutes
 
         return result, 200
+
 
 
 

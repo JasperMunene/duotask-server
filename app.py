@@ -14,6 +14,7 @@ from resources.auth_resource import SignupResource, VerifyOTPResource, LoginReso
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource, UserProfile
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
+from resources.task_status_update import StatusUpdate
 from resources.conversation_resource import ConversationResource, OlderMessages, ChatResource
 from resources.notifications_list_resource import NotificationsListResource, MarkNotificationRead
 from resources.feedback_resource import Feedback_resource
@@ -205,7 +206,8 @@ def create_app():
     # Task routes
     api.add_resource(TaskResource, '/tasks')
     api.add_resource(SingleTaskResource, '/tasks/<int:task_id>')
-    api.add_resource(TaskStatusResource, '/tasks/<int:task_id>/status')
+    # api.add_resource(TaskStatusResource, '/tasks/<int:task_id>/status')
+    api.add_resource(StatusUpdate, '/tasks/<int:task_id>/status')
     api.add_resource(TaskAssignResource, '/tasks/<int:task_id>/assign')
     api.add_resource(MyPostedTasksResource, '/tasks/my/posted')
     api.add_resource(PostedTaskResource, '/tasks/posted/<int:task_id>')

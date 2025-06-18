@@ -73,27 +73,36 @@ class InternalTransfer:
 
     def release_funds(self):
         try:
-            txn = InternalTransaction.query.filter_by(task_id=self.task_id, status="held").with_for_update().first()
+            txn = (
+                InternalTransaction.query
+                .filter_by(task_id=self.task_id, status="held")
+                .with_for_update()
+                .first()
+            )
             if not txn:
                 raise ValueError("No held transaction found for release")
 
             doers_pay = txn.amount - txn.platform_fee
 
-            # Credit doer's wallet
+            # Get or create doer's wallet
             doer_wallet = Wallet.query.filter_by(user_id=self.doer_id).with_for_update().first()
             if not doer_wallet:
-                raise ValueError("Doer's wallet not found")
+                doer_wallet = Wallet(user_id=self.doer_id, balance=Decimal("0.00"), status="active")
+                db.session.add(doer_wallet)
+
             doer_wallet.balance += doers_pay
 
-            # Credit platform wallet
+            # Get or create platform wallet
             platform_wallet = PlatformWallet.query.first()
             if not platform_wallet:
                 platform_wallet = PlatformWallet(balance=Decimal("0.00"), status="active")
                 db.session.add(platform_wallet)
+
             platform_wallet.balance = (platform_wallet.balance or Decimal("0.00")) + txn.platform_fee
 
-            # Update transaction
+            # Update transaction status
             txn.status = "released"
+
             db.session.commit()
 
             # Notify doer
@@ -109,7 +118,11 @@ class InternalTransfer:
                 sender_id=None
             ).post()
 
-            return {"status": "success", "doer_pay": float(doers_pay), "platform_fee": float(txn.platform_fee)}
+            return {
+                "status": "success",
+                "doer_pay": float(doers_pay),
+                "platform_fee": float(txn.platform_fee)
+            }
 
         except Exception as e:
             db.session.rollback()

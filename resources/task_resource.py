@@ -53,6 +53,7 @@ class TaskResource(Resource):
 
     @jwt_required()
     def get(self):
+        user_id = get_jwt_identity()
         args = self.parser.parse_args()
         cache = current_app.cache
         cache_key = f"tasks_{args['cursor']}_{args['limit']}_" \
@@ -70,7 +71,7 @@ class TaskResource(Resource):
             joinedload(Task.location),
             joinedload(Task.categories),
             joinedload(Task.user).joinedload(User.user_info)
-        )
+        ).filter(Task.user_id != user_id)
 
         # Apply filters and sorting
         query = self._apply_filters(query, args)
@@ -530,6 +531,7 @@ class SingleTaskResource(Resource):
             description: Task not found
         """
         # Validate task ID
+        user_id = get_jwt_identity()
         if not isinstance(task_id, int) or task_id < 1:
             abort(400, message="Invalid task ID format")
 
@@ -552,14 +554,14 @@ class SingleTaskResource(Resource):
         if not task or task.status == 'deleted':
             abort(404, message="Task not found")
 
-        serialized = self._serialize_task(task)
+        serialized = self._serialize_task(task, user_id)
 
         # Cache response for 5 minutes
         cache.set(cache_key, serialized, timeout=300)
 
         return serialized
 
-    def _serialize_task(self, task):
+    def _serialize_task(self, task, user_id):
         # 1) Compute average rating
         user_reviews = task.user.reviews_received if task.user else []
         avg_rating = (
@@ -573,6 +575,7 @@ class SingleTaskResource(Resource):
             'title',
             'description',
             'budget',
+            'work_mode',
             'status',
             'schedule_type',
             'specific_date',
@@ -611,6 +614,22 @@ class SingleTaskResource(Resource):
             'avatar': task.user.image
         }
 
+        if task.status not in ["open", "cancelled"]:
+                assignment = TaskAssignment.query.options(
+                    joinedload(TaskAssignment.doer)
+                ).filter_by(task_id=task.id, task_doer=user_id).first()
+
+                if assignment:
+                    task_data["assignment"] = {
+                        "id": assignment.id,
+                        "status": assignment.status,
+                        "task_doer": {
+                            "id": assignment.doer.id,
+                            "name": assignment.doer.name,
+                            "image": assignment.doer.image
+                        } if assignment.doer else None,
+                        "agreed_price": float(assignment.agreed_price or 0)
+                    }
         # 7) Metadata
         metadata = {
             'views': self._get_task_views(task.id),

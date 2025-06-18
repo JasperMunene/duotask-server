@@ -42,7 +42,7 @@ class MpesaC2BResource(Resource):
         data = request.get_json()
         phone_number = data.get("phone_number")
         amount = data.get("amount")
-        call_back_url = f"https://bgrtfdl5-5000.uks1.devtunnels.ms/payments/mpesa/call_back/{user_id}"
+        call_back_url = f"https://bgrtfdl5-5000.uks1.devtunnels.ms/payment/mpesa/call_back/{user_id}"
         if not phone_number or not amount:
             return {"message": "Missing phone number or amount"}, 400
 
