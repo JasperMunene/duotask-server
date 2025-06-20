@@ -83,6 +83,7 @@ class StatusUpdate(Resource):
                 if conversation:
                     conversation.archived = True
                     ids = [task.user_id, assignment.doer.id]
+                    self._update_user_stats(task, "completed")
                     for userc in ids:
                         cache.delete(f"conversations_user_{userc}")
             
@@ -102,6 +103,7 @@ class StatusUpdate(Resource):
                 cache.delete(f"user_wallet_{assignment.doer.id}")
 
             self._notify_based_on_status(**notify_payload)
+            
             # Use user IDs for precise cache keys
             task_owner_id = task.user_id
             task_doer_id = assignment.doer.id
@@ -153,3 +155,20 @@ class StatusUpdate(Resource):
                 is_important=True,
                 sender_id=sender_id
             ).post()
+
+    def _update_user_stats(self, task, action):
+        """
+        Atomically update user statistics based on action:
+          - 'completed': increment doer’s completed_tasks_count
+          - 'cancelled': increment owner’s cancelled_tasks_count
+        """
+        if action == 'completed':
+            assign = TaskAssignment.query.filter_by(task_id=task.id).first()
+            if assign:
+                User.query.filter_by(id=assign.task_doer).update(
+                    {User.completed_tasks_count: User.completed_tasks_count + 1}
+                )
+        elif action == 'cancelled':
+            User.query.filter_by(id=task.user_id).update(
+                {User.cancelled_tasks_count: User.cancelled_tasks_count + 1}
+            )
