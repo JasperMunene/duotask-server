@@ -6,26 +6,42 @@ from models.message import Message
 from models import db
 from utils.send_notification import Notify
 import logging
+
 logger = logging.getLogger()
+
 
 @socketio.on('connect')
 def handle_connect():
-    """Handle user connections and notify relevant users efficiently."""
+    """Fast connect confirmation, then background tasks."""
     user_id = request.args.get('user_id')
 
-    if user_id:
-        with current_app.app_context():  # Ensuring we have the correct app context
-            cache = current_app.cache
-            redis = current_app.redis
-            cache.set(f"user_sid:{user_id}", request.sid, timeout=0)
-            redis.sadd("online_users", user_id)  # Track online user
-            print(f"[+] User {user_id} connected with SID {request.sid}")
+    if not user_id:
+        return
+
+    # Step 1: Acknowledge connection immediately
+    socketio.emit('connected_ack', {'status': 'connected', 'user_id': user_id}, room=request.sid)
+    print(f"[✅] Acknowledged client {user_id} connection early.")
+
+    # Step 2: Defer the heavy logic
+    app = current_app._get_current_object()  # Grab app instance safely
+    socketio.start_background_task(target=process_user_connection, app=app, user_id=user_id, sid=request.sid)
+
+
+def process_user_connection(app, user_id, sid):
+    with app.app_context():  # Correct usage inside background thread
+        cache = app.cache
+        redis = app.redis
+
+        cache.set(f"user_sid:{user_id}", sid, timeout=0)
+        redis.sadd("online_users", user_id)
+        print(f"[+] User {user_id} SID saved. Online status set in Redis.")
 
         user = User.query.get(user_id)
         if user:
             user.update_status("online")
-            print(f"[✓] User {user_id} status set to online")
+            print(f"[✓] User {user_id} marked online in DB.")
 
+            # Fetch relevant conversations
             conversations = Conversation.query.filter(
                 (Conversation.task_giver == user_id) | (Conversation.task_doer == user_id)
             ).all()
@@ -36,23 +52,24 @@ def handle_connect():
             }
 
             if not other_user_ids:
-                print(f"[ℹ️] User {user_id} has no conversation participants")
+                print(f"[ℹ️] User {user_id} has no conversation participants.")
                 return
 
             other_users = User.query.filter(User.id.in_(other_user_ids)).all()
             online_users = [user for user in other_users if user.status == "online"]
 
             if not online_users:
-                print(f"[ℹ️] No online users to notify about user {user_id}'s connection")
+                print(f"[ℹ️] No online users to notify for user {user_id}.")
                 return
 
             for u in online_users:
-                sid = cache.get(f"user_sid:{str(u.id)}")
-                if sid:
-                    socketio.emit('user_connected', {'user_id': user_id}, room=sid)
-                    print(f"[📢] Notified user {u.id} (SID: {sid}) that user {user_id} is online")
+                other_sid = cache.get(f"user_sid:{str(u.id)}")
+                if other_sid:
+                    socketio.emit('user_connected', {'user_id': user_id}, room=other_sid)
+                    print(f"[📢] Notified user {u.id} that user {user_id} is online.")
                 else:
-                    print(f"[🚫] User {u.id} is online in DB but not connected via socket")
+                    print(f"[🚫] User {u.id} is online in DB but not connected via socket.")
+
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -281,7 +298,7 @@ def handle_typing(data):
 
 
 @socketio.on('mark_conversation_read')
-def handle_mark_all_delivered():
+def handle_mark_all_delivered(_):
     """Mark all messages in a conversation as delivered for the current user."""
     user_id = request.args.get('user_id')
     

@@ -45,6 +45,7 @@ class MpesaNumber(Resource):
             db.session.add(user_info)
 
         db.session.commit()
+        cache.delete(f"user_wallet_{user_id}")
         cache.set(f"user:{user_id}:mpesa", mpesa_number)
         return {"message": "M-Pesa number saved."}, 201
 
@@ -65,6 +66,7 @@ class MpesaNumber(Resource):
         user.user_info.mpesa_number = mpesa_number
         db.session.commit()
         cache.set(f"user:{user_id}:mpesa", mpesa_number)
+        cache.delete(f"user_wallet_{user_id}")
         return {"message": "M-Pesa number updated."}, 200
 
     @jwt_required()
@@ -79,4 +81,5 @@ class MpesaNumber(Resource):
         db.session.delete(user.user_info)
         db.session.commit()
         cache.delete(f"user:{user_id}:mpesa")
+        cache.delete(f"user_wallet_{user_id}")
         return {"message": "M-Pesa number deleted."}, 200

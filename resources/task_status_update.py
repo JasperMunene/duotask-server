@@ -9,6 +9,7 @@ from models.task_assignment import TaskAssignment
 import logging
 from werkzeug.exceptions import HTTPException
 from utils.send_notification import Notify
+from models.conversation import Conversation
 from utils.ledgers.internal import InternalTransfer
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,14 @@ class StatusUpdate(Resource):
                     "status": new_status,
                     "receiver_id": task.user_id if is_doer else assignment.doer.id
                 }
-
+            if new_status == "completed":
+                conversation = Conversation.query.filter_by(task_id = task_id).first()
+                if conversation:
+                    conversation.archived = True
+                    ids = [task.user_id, assignment.doer.id]
+                    for userc in ids:
+                        cache.delete(f"conversations_user_{userc}")
+            
             # Commit changes
             db.session.commit()
 
@@ -103,7 +111,7 @@ class StatusUpdate(Resource):
                 f"posted_task:{task_owner_id}:{task.id}",       # Task owner view
                 f"my_tasks:{task_owner_id}",                    # Task owner's task list
                 f"assigned_tasks:{task_doer_id}",               # Doer's assigned tasks
-                f"task_{task.id}"                              # General task detail view
+                f"task_{task.id}",                              # General task detail view
                 # f"user_tasks:{task_doer_id}",                   # Optional: doer's user profile/task history
                 # f"user_tasks:{task_owner_id}"                  # Optional: owner's user profile/task history
             ]

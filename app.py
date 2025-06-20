@@ -14,6 +14,7 @@ from resources.auth_resource import SignupResource, VerifyOTPResource, LoginReso
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource, UserProfile
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
+from resources.task_activity_resource import TaskActivityResource
 from resources.task_status_update import StatusUpdate
 from resources.conversation_resource import ConversationResource, OlderMessages, ChatResource
 from resources.notifications_list_resource import NotificationsListResource, MarkNotificationRead
@@ -212,6 +213,7 @@ def create_app():
     api.add_resource(MyPostedTasksResource, '/tasks/my/posted')
     api.add_resource(PostedTaskResource, '/tasks/posted/<int:task_id>')
     api.add_resource(MyAssignedTasksResource, '/tasks/my/assigned')
+    api.add_resource(TaskActivityResource, '/tasks/my_activity')
     
     # Messaging and conversation routes
     api.add_resource(ConversationResource, '/conversations', '/conversations/<int:user_id>')

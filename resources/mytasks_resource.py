@@ -7,6 +7,7 @@ from models.user import User
 from models.task_assignment import TaskAssignment
 from models.bid import Bid
 from flask import current_app
+from sqlalchemy import and_
 
 class MyPostedTasksResource(Resource):
     @jwt_required()
@@ -24,11 +25,16 @@ class MyPostedTasksResource(Resource):
         if cached:
             return cached, 200
 
-        tasks = Task.query.filter_by(user_id=user_id).options(
-            joinedload(Task.location),
-            joinedload(Task.categories),
-            joinedload(Task.images),
-        ).all()
+        tasks = Task.query.filter(
+                and_(
+                    Task.user_id == user_id,
+                    Task.status != 'completed'
+                )
+                ).options(
+                    joinedload(Task.location),
+                    joinedload(Task.categories),
+                    joinedload(Task.images)
+                ).all()
 
         if not tasks:
             return {"message": "No tasks found for this user"}, 404
@@ -218,9 +224,12 @@ class MyAssignedTasksResource(Resource):
             return {"message": "User not found"}, 403
 
         # Step 2: Get task assignments for the user
-        task_assignments = TaskAssignment.query.filter_by(task_doer=user_id).all()
+        task_assignments = TaskAssignment.query.filter(
+            TaskAssignment.task_doer == user_id,
+            TaskAssignment.status != 'completed'
+        ).all()
         if not task_assignments:
-            response = {"message": "No task assignments found for this user", "tasks": []}
+            response = {"message": "No active task assignments found for this user", "tasks": []}
             cache.set(cache_key, response, timeout=60 * 5)
             return response, 200
 
