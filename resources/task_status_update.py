@@ -1,19 +1,12 @@
 from flask_restful import Resource, reqparse, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
-from sqlalchemy import func, case, or_
 from sqlalchemy.orm import joinedload
 from models import db
 from models.task import Task
 from models.user import User
-from models.user_info import UserInfo
-from models.task_image import TaskImage
-from models.bid import Bid
 from models.task_assignment import TaskAssignment
 import logging
-import json
-import base64
-import urllib.parse
 from werkzeug.exceptions import HTTPException
 from utils.send_notification import Notify
 from utils.ledgers.internal import InternalTransfer
@@ -21,7 +14,6 @@ logger = logging.getLogger(__name__)
 
         
 class StatusUpdate(Resource):
-    cache = current_app.cache
     parser = reqparse.RequestParser()
     parser.add_argument(
         'status',
@@ -33,6 +25,8 @@ class StatusUpdate(Resource):
 
     @jwt_required()
     def put(self, task_id):
+        
+        cache = current_app.cache
         user_id = get_jwt_identity()
         args = self.parser.parse_args()
         new_status = args['status']
@@ -69,6 +63,7 @@ class StatusUpdate(Resource):
                     assignment.status = new_status
                     task.status = new_status
                 elif new_status == "done":
+                    task.status = new_status
                     assignment.status = new_status
                 elif new_status == "completed":
                     assignment.status = new_status
@@ -96,8 +91,25 @@ class StatusUpdate(Resource):
                     amount=assignment.agreed_price
                 )
                 transfer.release_funds()
+                cache.delete(f"user_wallet_{assignment.doer.id}")
 
             self._notify_based_on_status(**notify_payload)
+            # Use user IDs for precise cache keys
+            task_owner_id = task.user_id
+            task_doer_id = assignment.doer.id
+
+            # Clear cache keys related to both parties
+            cache_keys = [
+                f"posted_task:{task_owner_id}:{task.id}",       # Task owner view
+                f"my_tasks:{task_owner_id}",                    # Task owner's task list
+                f"assigned_tasks:{task_doer_id}",               # Doer's assigned tasks
+                f"task_{task.id}"                              # General task detail view
+                # f"user_tasks:{task_doer_id}",                   # Optional: doer's user profile/task history
+                # f"user_tasks:{task_owner_id}"                  # Optional: owner's user profile/task history
+            ]
+
+            for key in cache_keys:
+                cache.delete(key)
 
             return {
                 "message": f"Task status updated to {new_status}",

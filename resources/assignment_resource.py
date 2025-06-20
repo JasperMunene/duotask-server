@@ -11,6 +11,7 @@ from models.message import Message
 from models.user import User
 from utils.exceptions import InsufficientBalanceError
 from utils.ledgers.internal import InternalTransfer
+from utils.send_notification import Notify
 import logging
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class TaskAssignResource(Resource):
             ids = [task.user_id, bid.user_id]
             self._invalidate_caches(task_id, ids)
             self._notify_parties(task, bid, rejected_user_ids)
+            self._notify_new_convo_convos(ids)
 
             return {
                 'message': 'Task assigned successfully',
@@ -118,9 +120,41 @@ class TaskAssignResource(Resource):
             and_(Bid.task_id == task_id, Bid.status == 'pending', Bid.id != bid_id)
         ).all()
         return [b.user_id for b in other_bids]
-
+    
     def _create_conversation(self, sender_id, receiver_id, task_id):
-        conversation = Conversation(task_giver=sender_id, task_id = task_id, task_doer=receiver_id)
+        # Check for existing conversation between the two users on this task
+        existing_convo = Conversation.query.filter(
+            Conversation.task_id == task_id,
+            db.or_(
+                db.and_(Conversation.task_giver == sender_id, Conversation.task_doer == receiver_id),
+                db.and_(Conversation.task_giver == receiver_id, Conversation.task_doer == sender_id)
+            )
+        ).first()
+
+        if existing_convo:
+            # Clear existing messages
+            Message.query.filter_by(conversation_id=existing_convo.id).delete()
+
+            # Update roles to reflect new direction
+            existing_convo.task_giver = sender_id
+            existing_convo.task_doer = receiver_id
+            db.session.add(existing_convo)
+
+            # Add new opening message
+            message = Message(
+                conversation=existing_convo,
+                sender_id=sender_id,
+                reciever_id=receiver_id,
+                message="Hello, let's start the conversation.",
+                date_time=db.func.now()
+            )
+            db.session.add(message)
+            return existing_convo
+
+        # No existing conversation, create a new one
+        conversation = Conversation(task_giver=sender_id, task_id=task_id, task_doer=receiver_id)
+        db.session.add(conversation)
+
         message = Message(
             conversation=conversation,
             sender_id=sender_id,
@@ -129,7 +163,9 @@ class TaskAssignResource(Resource):
             date_time=db.func.now()
         )
         db.session.add(message)
+
         return conversation
+
 
     def _invalidate_caches(self, task_id, user_ids):
         try:
@@ -137,12 +173,22 @@ class TaskAssignResource(Resource):
             for key in redis_cli.scan_iter(f"task_bids_{task_id}_*"):
                 redis_cli.delete(key)
             redis_cli.delete(f"task_{task_id}")
-            cache = current_app.cash
+            cache = current_app.cache
+            cache.delete(f"my_tasks:{user_id}")
             for user_id in user_ids:
                 cache.delete(f"conversations_user_{user_id}")
         except Exception as e:
             logger.error(f"Cache invalidation failed: {e}")
 
+    def _notify_new_convo_convos(self, user_ids):
+        try:
+            sender_id = user_ids[0]
+            reciever_id = user_ids[1]
+            Notify(user_id=sender_id, message="New conversation", source="chat", sender_id=reciever_id).post()
+            Notify(user_id=reciever_id, message="New Convesation", source="chat", sender_id=sender_id).post()
+        
+        except Exception as e:
+            logger.error(f"Notification system error: {e}")
     def _notify_parties(self, task, bid, rejected_user_ids):
         try:
             current_app.celery.send_task(

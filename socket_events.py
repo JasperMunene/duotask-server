@@ -168,7 +168,7 @@ def handle_send_message(data):
             }, room=sender_sid)
         print('message sent')
         receiver_sid = current_app.cache.get(f"user_sid:{receiver_id}")
-        Notify(user_id=receiver_id, message="You got a new message", source="chat", sender_id=sender_id).post()
+        # Notify(user_id=receiver_id, message="You got a new message", source="chat", sender_id=sender_id).post()
         if receiver_sid:
             # Update message status to delivered
             message = Message.query.get(new_message.id)

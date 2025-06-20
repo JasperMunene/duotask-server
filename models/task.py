@@ -50,3 +50,4 @@ class Task(db.Model, SerializerMixin):
     )
     categories = db.relationship('Category', secondary=task_categories, backref='tasks')
     images = db.relationship("TaskImage", backref=db.backref("task", lazy=True), cascade="all, delete-orphan", single_parent=True)
+    conversations = db.relationship("Conversation", back_populates="task", cascade="all, delete-orphan", lazy='dynamic')

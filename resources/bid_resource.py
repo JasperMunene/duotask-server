@@ -170,7 +170,7 @@ class BidsResource(Resource):
 
             db.session.commit()
 
-            self._invalidate_bid_cache(task_id)
+            self._invalidate_bid_cache(task)
             self._notify_task_owner(task, bid)
 
             return {
@@ -230,15 +230,43 @@ class BidsResource(Resource):
     def _check_existing_bid(self, task_id, user_id):
         if Bid.query.filter_by(task_id=task_id, user_id=user_id).first():
             abort(409, message="You already have an active bid on this task")
-
-    def _invalidate_bid_cache(self, task_id):
+            
+    def _invalidate_bid_cache(self, task):
         try:
-            redis_cli = current_app.redis
-            # prefer scan_iter to avoid blocking
-            for key in redis_cli.scan_iter(f"task_bids_{task_id}_*"):
-                redis_cli.delete(key)
+            redis_cli = current_app.cache
+            task_owner_id = task.user_id
+            task_id = task.id
+
+            # Log the start of cache invalidation
+            logger.debug(f"Starting cache invalidation for task {task_id} (owner {task_owner_id})")
+
+            # Define static keys to delete
+            cache_keys = [
+                f"posted_task:{task_owner_id}:{task_id}",   # Task owner view
+                f"my_tasks:{task_owner_id}",                # Task owner's task list
+                f"task_{task_id}"                           # Task detail view
+            ]
+
+            deleted_keys = []
+
+            # Delete static keys
+            for key in cache_keys:
+                result = redis_cli.delete(key)
+                if result:
+                    deleted_keys.append(key)
+
+            # Use scan_iter for pattern matching — non-blocking and safe
+            bid_pattern = f"task_bids_{task_id}_*"
+            for key in redis_cli.scan_iter(match=bid_pattern):
+                result = redis_cli.delete(key)
+                if result:
+                    deleted_keys.append(key)
+
+            logger.debug(f"Cache keys invalidated: {deleted_keys}")
+
         except Exception as e:
-            logger.error(f"Cache invalidation failed: {e}")
+            logger.exception(f"Cache invalidation failed for task {task_id}: {e}")
+
 
     def _notify_task_owner(self, task, bid):
         try:

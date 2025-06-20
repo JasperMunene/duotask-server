@@ -6,7 +6,7 @@ class Conversation(db.Model, SerializerMixin):
     __tablename__ = 'conversation'
 
     # Exclude messages and user back-references to avoid cycles
-    serialize_rules = ('-messages', '-task_giver_user', '-task_doer_user')
+    serialize_rules = ('-messages', '-task_giver_user', '-task_doer_user', '-task')
 
     id = db.Column(db.Integer, primary_key=True)
     task_giver = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
@@ -14,6 +14,9 @@ class Conversation(db.Model, SerializerMixin):
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id', ondelete='CASCADE'), nullable=True)
     last_msg_id_giver = db.Column(db.Integer, nullable=True)
     last_msg_id_doer = db.Column(db.Integer, nullable=True)
+    
+    archived = db.Column(db.Boolean, default=False) 
 
-    # Relationship: messages are loaded dynamically
+    # Relationships
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade="all, delete-orphan")
+    task = db.relationship("Task", back_populates="conversations")

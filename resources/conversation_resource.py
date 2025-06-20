@@ -8,41 +8,11 @@ from models.user import User
 from flask import current_app
 from sqlalchemy.orm import joinedload
 from models import db
+from models.task import Task
+from models.task_assignment import TaskAssignment
 import datetime
 
 class ConversationResource(Resource):
-    def post(self):        
-        cache = current_app.cache
-        data = request.get_json()
-        task_giver_id = data.get('task_giver_id')
-        task_doer_id = data.get('task_doer_id')
-        # Ensure that both task_giver and task_doer are valid users
-        task_giver = User.query.get(task_giver_id)
-        task_doer = User.query.get(task_doer_id)
-        
-        if not task_giver or not task_doer:
-            return {"message": "Invalid user IDs"}, 400
-
-        # Create a new conversation
-        conversation = Conversation(task_giver=task_giver_id, task_doer=task_doer_id)
-
-        # Create the default message for task_doer
-        message = Message(
-            conversation=conversation,
-            sender_id=task_giver_id,
-            reciever_id=task_doer_id,
-            message="Hello, let's start the conversation.",
-            date_time=db.func.now()
-        )
-
-        # Add the conversation and the message to the session and commit
-        db.session.add(conversation)
-        db.session.add(message)
-        db.session.commit()
-        cache.delete(f"conversations_user_{task_giver_id}")
-        cache.delete(f"conversations_user_{task_doer_id}")
-        return {"message": "Conversation created successfully", "conversation_id": conversation.id}, 201
-
     @jwt_required()
     def get(self, user_id):
         cache = current_app.cache
@@ -104,8 +74,23 @@ class ConversationResource(Resource):
 
             unread = last_msg.reciever_id == user_id and last_msg.status != "read"
 
+            task = Task.query.get(convo.task_id)
+            assignment = TaskAssignment.query.filter_by(task_id=convo.task_id).first()
+
+            task_info = {
+                "title": task.title if task else None,
+                "description": task.description if task else None,
+                "status": task.status if task else None
+            } if task else {}
+
+            assignment_info = {
+                "agreed_price": float(assignment.agreed_price) if assignment else None,
+                "status": assignment.status if assignment else None
+            } if assignment else {}
+
             result.append({
                 "id": convo.id,
+                "archived": convo.archived,
                 "task_giver": convo.task_giver,
                 "task_doer": convo.task_doer,
                 "recipient": {
@@ -121,8 +106,11 @@ class ConversationResource(Resource):
                 "time": last_msg.date_time.isoformat(),
                 "status": recipient.status,
                 "last_seen": recipient.last_seen.isoformat(),
-                "unread": unread
+                "unread": unread,
+                "task": task_info,
+                "assignment": assignment_info
             })
+
 
         cache.set(cache_key, result)
         return result
@@ -133,16 +121,18 @@ class ChatResource(Resource):
         user_id = get_jwt_identity()
         cache = current_app.cache
         cache_key = f"chat_{conversation_id}_{user_id}"
-        print(user_id)
-        # Check cache first
+
+        # Check cache
         cached_chat = cache.get(cache_key)
         if cached_chat:
             return cached_chat
         
+        # Fetch conversation
         conversation = Conversation.query.get(conversation_id)
         if not conversation:
             return {"message": "Conversation not found"}, 404
         
+        # Determine recipient
         if conversation.task_giver != user_id:
             recipient_id = conversation.task_giver
         else:
@@ -150,18 +140,21 @@ class ChatResource(Resource):
 
         user = User.query.get(recipient_id)
 
-        # Fetch last 20 messages from the database, ordered ascending by date_time
+        # Fetch related task and assignment
+        task = Task.query.get(conversation.task_id)
+        assignment = TaskAssignment.query.filter_by(task_id=conversation.task_id).first()
+
+        # Fetch last 20 messages
         messages = (
             Message.query
             .filter_by(conversation_id=conversation_id)
-            .order_by(Message.date_time.desc())  # get newest first
+            .order_by(Message.date_time.desc())
             .limit(20)
             .all()
         )
+        messages.reverse()  # oldest first
 
-        # Reverse to ascending order (oldest first)
-        messages.reverse()
-
+        # Build response
         response = {
             "user_info": {
                 "id": user.id,
@@ -170,6 +163,7 @@ class ChatResource(Resource):
                 "status": user.status,
                 "last_seen": user.last_seen.isoformat()
             },
+            "archived": conversation.archived,
             "messages": [
                 {
                     "message_id": msg.id,
@@ -179,16 +173,23 @@ class ChatResource(Resource):
                     "image": msg.image,
                     "time": msg.date_time.isoformat(),
                     "status": msg.status,
-                    "sender_id" : msg.sender_id,
                     "sent": int(msg.sender_id) == int(user_id)
                 }
                 for msg in messages
-            ]
+            ],
+            "task": {
+                "title": task.title if task else None,
+                "description": task.description if task else None,
+                "status": task.status if task else None
+            },
+            "assignment": {
+                "agreed_price": float(assignment.agreed_price) if assignment else None,
+                "status": assignment.status if assignment else None
+            } if assignment else {}
         }
 
-        # Cache the result (optional: set a TTL if needed)
+        # Cache and return
         cache.set(cache_key, response)
-        
         return response
 
 # /messages/<conversation_id>?offset=0&limit=10
