@@ -40,3 +40,5 @@ from models.FloatWalletLedger import FloatWalletLedger
 from models.transaction_ledger import TransactionLedger
 from models.wallet_transactions import WalletTransaction
 from models.internal_transactions import InternalTransaction
+from models.user_location import UserLocation
+from models.recommended_tasks import RecommendedTasks

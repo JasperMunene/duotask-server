@@ -2,6 +2,7 @@ from flask import current_app
 from models import db
 from models.task import Task
 import requests
+from workers.instant_recomendation import recommend_best_user_for_task
 from models.category import Category
 from models.task_image import TaskImage
 from sqlalchemy import func, desc
@@ -118,6 +119,7 @@ def categorize_task(self, task_id):
                 task.categories.remove(uncategorized)
 
             db.session.commit()
+            _reccomend_to_doers(task_id)
             logger.info(f"Successfully categorized task {task_id} as {category_name}")
         else:
             logger.info(f"Task {task_id} already has category {category_name}")
@@ -127,6 +129,9 @@ def categorize_task(self, task_id):
     except Exception as e:
         logger.error(f"Failed to categorize task {task_id}: {str(e)}")
         self.retry(exc=e)
+
+
+    
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
@@ -247,3 +252,12 @@ def chunked(iterable, size):
     """Efficient chunking generator"""
     for i in range(0, len(iterable), size):
         yield iterable[i:i + size]
+
+
+def _reccomend_to_doers(task_id):
+    try:
+        with current_app.app_context():
+            recommend_best_user_for_task.delay(task_id)
+            logger.info(f"reccomendation delayed for task: {task_id}")
+    except Exception as e:
+        logger.error(f'failed to reccomend to doers, :{e}')

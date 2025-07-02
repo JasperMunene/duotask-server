@@ -1,42 +1,3 @@
-# # celery_app.py
-# from celery import Celery
-# import os
-# from dotenv import load_dotenv
-# from flask import current_app
-
-# # Load environment variables
-# load_dotenv()
-
-# def make_celery():
-#     """Create Celery instance"""
-#     celery = Celery(
-#         'tasks',
-#         broker=os.getenv('REDIS_URL', 'redis://localhost:6379/0'), 
-#         backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-#     )
-    
-#     # Configure Celery
-#     celery.conf.update(
-#         task_serializer='json',
-#         accept_content=['json'],
-#         result_serializer='json',
-#         timezone='UTC',
-#         enable_utc=True,
-#         imports=['workers.notifications']
-#     )
-    
-#     # Task base class that creates Flask app context
-#     # class ContextTask(celery.Task):
-#     #     def __call__(self, *args, **kwargs):
-#     #         # Import here to avoid circular imports
-#     #         with current_app.app_context():
-#     #             return self.run(*args, **kwargs)
-    
-#     # celery.Task = ContextTask
-#     return celery
-
-# # Create Celery instance
-# celery = make_celery()
 from celery import Celery
 import os
 
@@ -52,7 +13,7 @@ celery.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    imports=['workers.notifications']
+    imports=['workers']
 )
 
 def init_celery(app):
@@ -66,3 +27,6 @@ def init_celery(app):
     celery.Task = ContextTask
     celery.flask_app = app  # Store app reference for tasks
     return celery
+
+# start celery worker with:
+# celery -A app.celery worker --loglevel=info

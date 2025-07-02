@@ -134,6 +134,25 @@ def bid_rejected(self, task_id, user_ids, sender_id):
 
 
 @celery.task(bind=True, name="workers.notification.task_assigned", max_retries=3, default_retry_delay=30)
+def notify_user(self, user_id, message, source, is_important=False, sender_id=None):
+    """
+    Notify a user with a custom message.
+    """
+    try:
+        notify = Notify(
+            user_id=user_id,
+            message=message,
+            source=source,
+            is_important=is_important,
+            sender_id=sender_id
+        )
+        notify.post()
+        logger.info(f"Notification sent to user {user_id}: {message}")
+    except Exception as exc:
+        logger.error(f"Failed to send notification to user {user_id}: {exc}")
+        raise self.retry(exc=exc)
+
+@celery.task(bind=True, name="workers.notification.task_assigned", max_retries=3, default_retry_delay=30)
 def task_assigned(self, task_id, user_id, sender_id):
     # notify the successfully bidder that the task was accepted and the task owner should reach out soon
     try:

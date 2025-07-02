@@ -13,6 +13,7 @@ from flask_jwt_extended import JWTManager
 from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
     GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource, UserProfile
+from resources.task_recommendation_resource import TaskRecommendationResource
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
 from resources.task_activity_resource import TaskActivityResource
 from resources.task_status_update import StatusUpdate
@@ -34,6 +35,7 @@ from resources.push_notification import SubscribePush, UnsubscribeToken
 from resources.assignment_resource import TaskAssignResource
 from resources.payment_resources import GetGateways, MpesaPaymentResource, TestMpesa, TestPay, CardPaymentResource, CurrencyDetails, VerifyNumber, ChangeDefault
 from resources.paystack_call_back import Paystack_callback
+from resources.user_location_respource import UserLocationResource
 from resources.review_resource import ReviewListResource, ReviewResource
 from resources.upload_media_resource import ImageUploadResource
 from datetime import timedelta
@@ -230,8 +232,15 @@ def create_app():
     # Feedback routes
     api.add_resource(Feedback_resource, '/feedbacks') #post feedback, get /feedback?page={page}&limit={limit}
     
+    # Task recommendation route
+    api.add_resource(TaskRecommendationResource, '/tasks/recommended')
+    # page, per_page, total, pages.
+    
+    
+    # User location resource
+    api.add_resource(UserLocationResource, '/user/location', '/user/location/<int:user_id>')
     # testing resources
-    api.add_resource(TestFloatLedger, '/api/test/float_ledger')
+    api.add_resource(TestFloatLedger, '/api/test')
     return app
 
 # Run the app using     Flask-SocketIO if this file is run directly

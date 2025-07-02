@@ -68,7 +68,7 @@ class MyPostedTasksResource(Resource):
                     }
             else:
                 # If task is still open, include bids
-                bids = Bid.query.options(joinedload(Bid.user)).filter_by(task_id=task.id).all()
+                bids = Bid.query.options(joinedload(Bid.user)).filter(Bid.task_id == task.id, Bid.status != 'rejected').all()
                 task_data["bids_count"] = len(bids)
                 task_data["bids"] = [
                     {
