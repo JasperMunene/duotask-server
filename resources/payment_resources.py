@@ -1,4 +1,4 @@
-from flask import request
+from flask import request, current_app
 from flask_restful import Resource
 from models import db
 from models.user import User
@@ -59,6 +59,7 @@ class VerifyNumber(Resource):
 class MpesaPaymentResource(Resource):
     @jwt_required()
     def post(self):
+        cache = current_app.cache
         data = request.get_json()
         user_id = get_jwt_identity()
 
@@ -91,7 +92,7 @@ class MpesaPaymentResource(Resource):
 
         db.session.commit()
         Notify(user_id, message = f"Mpesa number was updates successfully to {detail.mpesa_number}", source="wallet").post()
-
+        cache.delete(f"user_wallet_{user_id}")
         return {"message": "M-Pesa number verified and details updated.", 
                 "payment": {
                     "user_id": detail.user_id,

@@ -26,8 +26,9 @@ class InternalTransfer:
     def hold_funds(self):
         try:
             wallet = Wallet.query.filter_by(user_id=self.user_id).first()
-            if not wallet or wallet.balance < self.amount:
-                 raise InsufficientBalanceError(required_amount=self.amount, current_balance=0)
+            if not wallet or wallet.balance < 1 or wallet.balance == None:
+                print(f"User {self.user_id} does not have a wallet or sufficient balance.")
+                raise InsufficientBalanceError(required_amount=self.amount, current_balance=0)
             
             current_balance = Decimal(wallet.balance)
             required_amount = Decimal(self.amount)

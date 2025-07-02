@@ -1,12 +1,11 @@
-# tasks.py
-from app import create_app
 from flask import current_app
 from models import db
 from models.task import Task
+import requests
 from models.category import Category
 from models.task_image import TaskImage
 from sqlalchemy import func, desc
-import google.generativeai as genai
+# import google.generativeai as genai  # ❌ Commented out
 import logging
 import os
 import time
@@ -16,95 +15,118 @@ from celery.schedules import crontab
 logger = logging.getLogger(__name__)
 
 # Configuration
-BATCH_SIZE = 500  # Optimal for most databases
-CHUNK_SIZE = 50   # For individual processing
+BATCH_SIZE = 500
+CHUNK_SIZE = 50
 RETENTION_DAYS = 30
 MAX_RETRIES = 3
-RETRY_DELAY = 300  # 5 minutes
+RETRY_DELAY = 300
 
-def create_celery():
-    app = create_app()
-    celery = app.celery
-    return celery
+from celery_app import celery
 
-celery = create_celery()
+
+def categorize_task_manually(task_title, task_description, category_names):
+    api_key = os.getenv('GEMINI_API_KEY')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+
+    prompt = f"""
+    You are a task categorization assistant for a gig marketplace.
+
+    Objective:
+    1. Analyze the following task: "{task_title}" - {task_description}"
+    2. Choose the MOST SUITABLE category from this list: {', '.join(category_names) or 'None'}
+    3. If no category fits well, you are allowed to create a NEW category that is highly relevant.
+    4. Do NOT return "Uncategorized".
+    5. Pick a category that best describes the NATURE of the work or the type of help requested.
+
+    Output Format:
+    Return ONLY the category name — no extra explanation.
+
+    Examples:
+    - Task: "Fix broken sink" → "Plumbing"
+    - Task: "Design a company logo" → "Graphic Design"
+    - Task: "Wait in line at government office" → "Errands"
+    - Task: "Help move a couch upstairs" → "Moving Help"
+    
+    or any relevant categoty that you think, the app is open to new categories.
+    Task to Categorize:
+    "{task_title}" - {task_description}"
+
+    Output:
+    """
+
+
+    payload = {
+        "contents": [{
+            "parts": [{
+                "text": prompt
+            }]
+        }],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 20
+        }
+    }
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+
+    if response.status_code == 200:
+        data = response.json()
+        category = data['candidates'][0]['content']['parts'][0]['text'].strip().title()[:50].strip(' .')
+        return category or "Uncategorized"
+    else:
+        logger.error(f"Gemini API Error: {response.status_code} - {response.text}")
+        return "Uncategorized"
 
 
 @celery.task(bind=True, max_retries=3, default_retry_delay=30)
 def categorize_task(self, task_id):
     """Background task for AI categorization"""
-    app = create_app()
-    with app.app_context():
-        try:
-            # Eager load categories to prevent duplicate checks
-            task = Task.query.options(db.joinedload(Task.categories)).get(task_id)
-            if not task:
-                logger.error(f"Task {task_id} not found")
-                return
+    try:
+        task = Task.query.options(db.joinedload(Task.categories)).get(task_id)
+        if not task:
+            logger.error(f"Task {task_id} not found")
+            return
 
-            # Get existing categories
-            existing_categories = Category.query.with_entities(Category.name).all()
-            category_names = [c[0] for c in existing_categories]
+        existing_categories = Category.query.with_entities(Category.name).all()
+        category_names = [c[0] for c in existing_categories]
 
-            # Generate category using AI
-            genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-            model = genai.GenerativeModel('gemini-2.0-flash')
+        # Use manual Gemini API call instead of genai SDK
+        category_name = categorize_task_manually(task.title, task.description, category_names)
 
-            prompt = f"""Task Categorization Guide:
-1. Analyze this task: "{task.title}" - {task.description}
-2. Existing categories: {', '.join(category_names) or 'None'}
-3. Choose BEST existing category or create new one
-4. Return ONLY the category name
-Examples:
-- "Need plumbing help" → "Plumbing"
-- "Logo design needed" → "Graphic Design"
-Output:"""
+        category = next(
+            (c for c in Category.query.all() if c.name.lower() == category_name.lower()),
+            None
+        )
 
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    temperature=0.2,
-                    max_output_tokens=20,
-                    candidate_count=1
-                )
-            )
+        if not category:
+            category = Category(name=category_name)
+            db.session.add(category)
+            db.session.flush()
 
-            category_name = response.text.strip().title()[:50].strip(' .') or "Uncategorized"
+        if category not in task.categories:
+            task.categories.append(category)
 
-            # Find existing category
-            category = next(
-                (c for c in Category.query.all() if c.name.lower() == category_name.lower()),
+            uncategorized = next(
+                (c for c in task.categories if c.name.lower() == "uncategorized"),
                 None
             )
+            if uncategorized:
+                task.categories.remove(uncategorized)
 
-            # Create new category if needed
-            if not category:
-                category = Category(name=category_name)
-                db.session.add(category)
-                db.session.flush()  # Generate ID without committing yet
+            db.session.commit()
+            logger.info(f"Successfully categorized task {task_id} as {category_name}")
+        else:
+            logger.info(f"Task {task_id} already has category {category_name}")
 
-            # Check if category is already associated
-            if category not in task.categories:
-                task.categories.append(category)
+        return category_name
 
-                # Remove temporary "Uncategorized" category if it exists
-                uncategorized = next(
-                    (c for c in task.categories if c.name.lower() == "uncategorized"),
-                    None
-                )
-                if uncategorized:
-                    task.categories.remove(uncategorized)
-
-                db.session.commit()
-                logger.info(f"Successfully categorized task {task_id} as {category_name}")
-            else:
-                logger.info(f"Task {task_id} already has category {category_name}")
-
-            return category_name
-
-        except Exception as e:
-            logger.error(f"Failed to categorize task {task_id}: {str(e)}")
-            self.retry(exc=e)
+    except Exception as e:
+        logger.error(f"Failed to categorize task {task_id}: {str(e)}")
+        self.retry(exc=e)
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
@@ -119,59 +141,58 @@ def setup_periodic_tasks(sender, **kwargs):
 def permanent_deletion_worker(self):
     """Enterprise-grade deletion worker with advanced features"""
     logger.info("Permanent deletion worker has started execution.")
-    app = create_app()
-    with app.app_context():
-        try:
-            redis = current_app.redis
-            start_time = time.monotonic()
-            total_deleted = 0
-            failure_count = 0
+    try:
+        redis = current_app.redis
+        start_time = time.monotonic()
+        total_deleted = 0
+        failure_count = 0
 
-            cutoff_date = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
-            logger.info(f"Starting permanent deletion process for tasks deleted before {cutoff_date}")
+        cutoff_date = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
+        logger.info(f"Starting permanent deletion process for tasks deleted before {cutoff_date}")
 
-            query = Task.query.filter(
-                Task.is_deleted.is_(True),
-                Task.deleted_at <= cutoff_date
-            ).order_by(desc(Task.deleted_at))
+        query = Task.query.filter(
+            Task.is_deleted.is_(True),
+            Task.deleted_at <= cutoff_date
+        ).order_by(desc(Task.deleted_at))
 
-            last_id = None
-            while True:
-                batch = query
-                if last_id:
-                    batch = batch.filter(Task.id < last_id)
+        last_id = None
+        while True:
+            batch = query
+            if last_id:
+                batch = batch.filter(Task.id < last_id)
 
-                tasks = batch.limit(BATCH_SIZE).all()
-                if not tasks:
-                    break
+            tasks = batch.limit(BATCH_SIZE).all()
+            if not tasks:
+                break
 
-                for chunk in chunked(tasks, CHUNK_SIZE):
-                    try:
-                        chunk_deleted = process_deletion_chunk(chunk)
-                        total_deleted += chunk_deleted
-                    except Exception as chunk_error:
-                        logger.error(f"Chunk processing failed: {chunk_error}")
-                        failure_count += len(chunk)
-                        continue
+            for chunk in chunked(tasks, CHUNK_SIZE):
+                try:
+                    chunk_deleted = process_deletion_chunk(chunk)
+                    total_deleted += chunk_deleted
+                except Exception as chunk_error:
+                    logger.error(f"Chunk processing failed: {chunk_error}")
+                    failure_count += len(chunk)
+                    continue
 
-                last_id = tasks[-1].id
-                db.session.expunge_all()  # Prevent memory bloat
+            last_id = tasks[-1].id
+            db.session.expunge_all()  # Prevent memory bloat
 
-            duration = time.monotonic() - start_time
-            logger.info(
-                f"Deletion completed. Total: {total_deleted}, "
-                f"Failures: {failure_count}, Duration: {duration:.2f}s"
-            )
+        duration = time.monotonic() - start_time
+        logger.info(
+            f"Deletion completed. Total: {total_deleted}, "
+            f"Failures: {failure_count}, Duration: {duration:.2f}s"
+        )
 
-            # Update metrics in Redis
-            redis.hincrby('worker_metrics', 'tasks_deleted', total_deleted)
-            redis.hincrby('worker_metrics', 'deletion_failures', failure_count)
+        # Update metrics in Redis
+        redis.hincrby('worker_metrics', 'tasks_deleted', total_deleted)
+        redis.hincrby('worker_metrics', 'deletion_failures', failure_count)
 
-            return {'deleted': total_deleted, 'failures': failure_count}
-
-        except Exception as e:
-            logger.critical(f"Critical worker failure: {str(e)}")
-            self.retry(countdown=RETRY_DELAY ** (self.request.retries + 1), exc=e)
+        logger.info(f"'deleted': {total_deleted}, 'failures': {failure_count}, 'duration': {duration}")
+        return {'deleted': total_deleted, 'failures': failure_count, 'duration': duration}
+        
+    except Exception as e:
+        logger.critical(f"Critical worker failure: {str(e)}")
+        self.retry(countdown=RETRY_DELAY ** (self.request.retries + 1), exc=e)
 
 def process_deletion_chunk(chunk):
     """Process a chunk of tasks with individual transactions"""

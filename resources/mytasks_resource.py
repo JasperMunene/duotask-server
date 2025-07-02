@@ -162,7 +162,7 @@ class PostedTaskResource(Resource):
 
         # --- Bids if open ---
         if task.status == "open":
-            bid_query = Bid.query.options(joinedload(Bid.user)).filter(Bid.task_id == task.id).all()
+            bid_query = Bid.query.options(joinedload(Bid.user)).filter(Bid.task_id == task.id, Bid.status != 'rejected').all()
             result["bids"] = [
                 {
                     "bidder_image": bid.user.image,

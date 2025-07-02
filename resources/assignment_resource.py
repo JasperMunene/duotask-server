@@ -8,6 +8,7 @@ from models.bid import Bid
 from models.task_assignment import TaskAssignment
 from models.conversation import Conversation
 from models.message import Message
+from workers.notifications import task_assigned, bid_rejected
 from models.user import User
 from utils.exceptions import InsufficientBalanceError
 from utils.ledgers.internal import InternalTransfer
@@ -191,16 +192,9 @@ class TaskAssignResource(Resource):
             logger.error(f"Notification system error: {e}")
     def _notify_parties(self, task, bid, rejected_user_ids):
         try:
-            current_app.celery.send_task(
-                'notifications.task_assigned',
-                args=(task.id, bid.user_id, task.user_id),
-                queue='notifications'
-            )
-            if rejected_user_ids:
-                current_app.celery.send_task(
-                    'notifications.bid_rejected',
-                    args=(task.id, list(set(rejected_user_ids)), task.user_id),
-                    queue='notifications'
-                )
+            with current_app.app_context():
+                task_assigned.delay(task.id, bid.user_id, task.user_id)
+                if rejected_user_ids:
+                    bid_rejected.delay(task.id, list(set(rejected_user_ids)), task.user_id)
         except Exception as e:
             logger.error(f"Notification system error: {e}")

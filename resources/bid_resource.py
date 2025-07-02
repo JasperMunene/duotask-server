@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
 from werkzeug.exceptions import HTTPException
 from sqlalchemy import asc, desc, func, case
+from workers.notifications import new_bid
 from sqlalchemy.orm import joinedload, Session
 from models import db
 from models.task import Task
@@ -11,7 +12,7 @@ from models.user import User
 from utils.completion_rate import UserCompletionRateCalculator
 from utils.user_rating import UserRatingCalculator
 from utils.send_notification import Notify
-
+from celery_app import celery
 import logging
 logger = logging.getLogger(__name__)
 
@@ -267,15 +268,12 @@ class BidsResource(Resource):
         except Exception as e:
             logger.exception(f"Cache invalidation failed for task {task_id}: {e}")
 
-
+    
     def _notify_task_owner(self, task, bid):
         try:
-            current_app.celery.send_task(
-                'notifications.new_bid',
-                args=(task.user_id, bid.id, bid.user_id),
-                queue='notifications'
-            )
-            
-            Notify(user_id=task.user_id, message="Bidded on your task", source="bid", sender_id=bid.user_id).post()
+            with current_app.app_context():
+                # Queue the notification task
+                new_bid.delay(task.user_id, task.title, bid.id, bid.user_id)
+                logger.info(f"Queuing new bid notification for task {task.id} by user {bid.user_id}")
         except Exception as e:
             logger.error(f"Failed to queue notification: {e}")

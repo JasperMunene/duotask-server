@@ -41,6 +41,8 @@ from authlib.integrations.flask_client import OAuth
 import threading
 import ssl
 import socket_events
+from celery_app import celery
+from celery_app import init_celery
 # Load environment variables from .env file
 load_dotenv()
 
@@ -123,25 +125,7 @@ def create_app():
         CELERY_REDIS_BACKEND_USE_SSL={"ssl_cert_reqs": ssl.CERT_NONE}
     )
 
-    # Initialize Celery
-    celery = Celery(app.import_name)
-    celery.conf.update(
-        broker_url=app.config["CELERY_BROKER_URL"],
-        result_backend=app.config["CELERY_RESULT_BACKEND"],
-        task_serializer='json',
-        result_serializer='json',
-        accept_content=['json'],
-        timezone='UTC',
-        enable_utc=True
-    )
-
-    # Optional: Configure SSL if using rediss://
-    if app.config["CELERY_BROKER_URL"].startswith("rediss://"):
-        celery.conf.broker_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
-        celery.conf.redis_backend_use_ssl = {"ssl_cert_reqs": ssl.CERT_NONE}
-
-    app.celery = celery
-
+    celery = init_celery(app)
     # Enable CORS for cross-origin requests
     CORS(app)
 
@@ -155,13 +139,6 @@ def create_app():
     # Initialize API and route definitions
     api = Api(app)
 
-    # Custom task base class to allow Flask context in Celery tasks
-    class ContextTask(celery.Task):
-        def __call__(self, *args, **kwargs):
-            with app.app_context():
-                return self.run(*args, **kwargs)
-
-    celery.Task = ContextTask
 
     # Health check endpoint for Redis
     class HealthCheck(Resource):

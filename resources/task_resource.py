@@ -1,6 +1,7 @@
 from flask_restful import Resource, reqparse, abort
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
+from workers.tasks import categorize_task
 from sqlalchemy import func, case, or_
 from sqlalchemy.orm import joinedload
 from models import db
@@ -332,13 +333,14 @@ class TaskResource(Resource):
 
             db.session.commit()
             self._invalidate_cache()
-
+            self._categorise_task_worker(task.id)
             # Enqueue background task for AI categorization
-            current_app.celery.send_task(
-                'workers.tasks.categorize_task',
-                args=(task.id,),
-                queue='ai_tasks'
-            )
+            # current_app.celery.send_task(
+            #     'workers.tasks.categorize_task',
+            #     args=(task.id,),
+            #     queue='ai_tasks'
+            # )
+            
 
             return self._serialize_new_task(task), 201
 
@@ -349,6 +351,15 @@ class TaskResource(Resource):
             logger.error(f"Task creation failed: {str(e)}", exc_info=True)
             abort(500, message="Failed to create task")
 
+    def _categorise_task_worker(self, task_id):
+        try:
+            with current_app.app_context():
+                # Queue the notification task
+                categorize_task.delay(task_id)
+                logger.info(f"Queuing fir task categorization for task: {task_id}")
+        except Exception as e:
+                logger.error(f"Failed to queue task categorisation: {e}")
+            
     def _validate_budget(self, budget):
         """Validate budget constraints"""
         if budget <= 0 or budget > 1000000:  # $1M max
@@ -1209,7 +1220,7 @@ class TaskStatusResource(Resource):
         except Exception as e:
             logger.error(f"Cache invalidation failed: {e}")
 
-    def _send_notifications(self, task, old_status, new_status):
+    def _send_notifications(self, task, new_status):
         """
         Enqueue notifications via Celery based on new_status:
           - On completion, notify owner & queue rating reminders
