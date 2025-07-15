@@ -12,7 +12,7 @@ class UserRelations(Resource):
         data = request.get_json()
         user_id = get_jwt_identity()
         other_user_id = data.get('other_user')
-        relation = data.get('relation')
+        relation = data.get('relation', 'tasker')  # Default relation type
 
         # Check if both users exist
         user = User.query.get(user_id)

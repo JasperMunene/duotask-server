@@ -8,9 +8,10 @@ from utils.haversine_distance_km import haversine_distance_km
 from models.task import Task
 from workers.notifications import notify_user
 from models.recommended_tasks import RecommendedTasks
+from models.user_relation import UserRelation
 import logging
 from sqlalchemy.orm import joinedload
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 import requests
 import json
 import os
@@ -51,19 +52,49 @@ def recommend_best_user_for_task(self, task_id):
         lon_min, lon_max = task_lon - LON_KM, task_lon + LON_KM
         logger.debug(f"Bounding box: ({lat_min}, {lat_max}), ({lon_min}, {lon_max})")
 
-        candidates = (
-            db.session.query(User, UserInfo, UserLocation)
-            .join(UserInfo, User.id == UserInfo.user_id)
-            .join(UserLocation, User.id == UserLocation.user_id)
-            .filter(
-                and_(
-                    User.id != task.user_id, 
-                    UserLocation.latitude.between(lat_min, lat_max),
-                    UserLocation.longitude.between(lon_min, lon_max)
+        favorite_ids = [row[0] for row in db.session.query(UserRelation.related_user_id).filter_by(
+            user_id=task.user_id,
+            relation_type='favorite'
+        ).all()]
+
+        if favorite_ids:
+            # Combine favorites + location filter
+            candidates = (
+                db.session.query(User, UserInfo, UserLocation)
+                .join(UserInfo, User.id == UserInfo.user_id)
+                .join(UserLocation, User.id == UserLocation.user_id)
+                .filter(
+                    and_(
+                        User.id != task.user_id,
+                        or_(
+                            and_(
+                                UserLocation.latitude.between(lat_min, lat_max),
+                                UserLocation.longitude.between(lon_min, lon_max)
+                            ),
+                            User.id.in_(favorite_ids)
+                        )
+                    )
                 )
+                .distinct(User.id)
+                .all()
             )
-            .all()
-        )
+        else:
+            # Only filter by location
+            candidates = (
+                db.session.query(User, UserInfo, UserLocation)
+                .join(UserInfo, User.id == UserInfo.user_id)
+                .join(UserLocation, User.id == UserLocation.user_id)
+                .filter(
+                    and_(
+                        User.id != task.user_id,
+                        UserLocation.latitude.between(lat_min, lat_max),
+                        UserLocation.longitude.between(lon_min, lon_max)
+                    )
+                )
+                .all()
+            )
+
+
         logger.info(f"Found {len(candidates)} candidates within bounding box")
 
         options = []
@@ -177,13 +208,27 @@ def query_gemini_for_best_fit(prompt, options):
 
 
 def send_task_recommendation(user_ids, task):
-    logger.info(f"Sending notifications for task {task.id} to users: {user_ids}")
+    if not user_ids:
+        logger.info(f"No users to notify for task {task.id}")
+        return
+
+    logger.info(f"Sending task recommendation notifications for task {task.id} to {len(user_ids)} users")
+
     try:
-        for user_id in user_ids:
-            with current_app.app_context():
-                message = f"Task '{task.title}' is available for you. Check it out!"
-                notify_user.delay(user_id=user_id, message=message, source='task_recommendation')
-                logger.info(f"Notification sent to user {user_id} for task {task.id}.")
+        # Use one app context for all notifications
+        with current_app.app_context():
+            message = f"Task '{task.title}' is available for you. Check it out!"
+
+            # Queue all notifications in bulk
+            for user_id in user_ids:
+                notify_user.delay(
+                    user_id=user_id,
+                    message=message,
+                    source='task_recommendation'
+                )
+
+        logger.info(f"Queued notifications for task {task.id} to {len(user_ids)} users")
+
     except Exception as exc:
-        logger.error(f"Failed to send notifications: {exc}")
+        logger.exception(f"Failed to queue notifications for task {task.id}: {exc}")
 

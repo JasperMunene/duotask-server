@@ -154,7 +154,7 @@ def notify_user(self, user_id, message, source, is_important=False, sender_id=No
 
 @celery.task(bind=True, name="workers.notification.task_assigned", max_retries=3, default_retry_delay=30)
 def task_assigned(self, task_id, user_id, sender_id):
-    # notify the successfully bidder that the task was accepted and the task owner should reach out soon
+    # notify the successfully bidder that the task was   accepted and the task owner should reach out soon
     try:
         task = Task.query.get(task_id)
         bid = Bid.query.filter_by(task_id=task_id, user_id=user_id).first()

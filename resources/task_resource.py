@@ -72,7 +72,7 @@ class TaskResource(Resource):
             joinedload(Task.location),
             joinedload(Task.categories),
             joinedload(Task.user).joinedload(User.user_info)
-        ).filter(Task.user_id != user_id)
+        )
 
         # Apply filters and sorting
         query = self._apply_filters(query, args)
@@ -85,12 +85,10 @@ class TaskResource(Resource):
                 decoded_cursor = urllib.parse.unquote(args['cursor'])
                 cursor_str = base64.b64decode(decoded_cursor).decode('utf-8')
                 cursor_data = json.loads(cursor_str)
+                query = self._apply_cursor(query, args['sort'], cursor_data)
             except Exception as e:
                 current_app.logger.error(f"Cursor decoding failed: {str(e)}")
                 abort(400, message="Invalid cursor format")
-
-        if cursor_data:
-            query = self._apply_cursor(query, args['sort'], cursor_data)
 
         # Fetch limit + 1 to check for next page
         tasks = query.limit(args['limit'] + 1).all()

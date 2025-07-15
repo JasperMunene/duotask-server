@@ -13,8 +13,15 @@ celery.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    imports=['workers']
+    imports=['workers', 'workers.batch_recommendation']
 )
+celery.conf.beat_schedule = {
+    'process-batch-recommendation': {
+        'task': 'workers.process_batch_recommendation',
+        'schedule': 60.0,  # Run every 60 seconds
+        'args': ()
+    }
+}
 
 def init_celery(app):
     """Initialize Celery with existing Flask app"""
@@ -28,5 +35,6 @@ def init_celery(app):
     celery.flask_app = app  # Store app reference for tasks
     return celery
 
-# start celery worker with:
+# start celery worker and batching with:
 # celery -A app.celery worker --loglevel=info
+# celery -A app.celery beat --loglevel=info
