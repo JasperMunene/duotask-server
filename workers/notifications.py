@@ -16,6 +16,8 @@ def new_bid(self, user_id, task_title, bid_id, sender_id):
     Celery task to notify the task owner that a new bid was placed.
     Retrieves additional bid details including the bidder's name.
     """
+    
+    logger.info(f"Processing new bid notification for user {user_id} on task '{task_title}' with bid ID {bid_id}")
     # Create a Flask app context for this worker.
     try:
         # Retrieve the bid details.
@@ -133,7 +135,7 @@ def bid_rejected(self, task_id, user_ids, sender_id):
         raise self.retry(exc=exc)
 
 
-@celery.task(bind=True, name="workers.notification.task_assigned", max_retries=3, default_retry_delay=30)
+@celery.task(bind=True, name="workers.notification.notify_user", max_retries=3, default_retry_delay=30)
 def notify_user(self, user_id, message, source, is_important=False, sender_id=None):
     """
     Notify a user with a custom message.

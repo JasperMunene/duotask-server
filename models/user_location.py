@@ -19,6 +19,7 @@ class UserLocation(db.Model, SerializerMixin):
     longitude = db.Column(db.Float, nullable=True)  # e.g. 36.8219
     street = db.Column(db.String(120), nullable=True)  # e.g. "Koinange St"
     area = db.Column(db.String(120), nullable=True)    # e.g. "CBD"
+    city = db.Column(db.String(120), nullable=True)     # e.g. "Nairobi"
     state = db.Column(db.String(120), nullable=True)   # e.g. "Nairobi County"
     country = db.Column(db.String(120), nullable=True) # e.g. "Kenya"
 

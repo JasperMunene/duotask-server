@@ -13,6 +13,7 @@ class UserLocationResource(Resource):
     parser.add_argument('longitude', type=float, required=True, help="Longitude is required")
     parser.add_argument('area', type=str, required=False)
     parser.add_argument('state', type=str, required=False)
+    parser.add_argument('street', type=str, required=False)
     parser.add_argument('city', type=str, required=False)
     parser.add_argument('country', type=str, required=False)
     
@@ -35,15 +36,17 @@ class UserLocationResource(Resource):
             "longitude": location.longitude,
             "area": location.area,
             "state": location.state,
-            "city": getattr(location, "city", None),
+            "street": location.street,
+            "city": location.city,
             "country": location.country
         }, timeout=3600)
         return {
             "latitude": location.latitude,
             "longitude": location.longitude,
             "area": location.area,
+            "street": location.street,
             "state": location.state,
-            "city": getattr(location, "city", None),
+            "city": location.city,
             "country": location.country
         }, 200
 
@@ -63,6 +66,7 @@ class UserLocationResource(Resource):
                     latitude=args['latitude'],
                     longitude=args['longitude'],
                     area=args.get('area'),
+                    street=args.get('street'),
                     state=args.get('state'),
                     country=args.get('country')
                 )
@@ -76,10 +80,10 @@ class UserLocationResource(Resource):
                 location.latitude = args['latitude']
                 location.longitude = args['longitude']
                 location.area = args.get('area')
+                location.street = args.get('street')
                 location.state = args.get('state')
                 location.country = args.get('country')
-                if hasattr(location, "city"):
-                    location.city = args.get("city")
+                location.city = args.get("city")
 
             db.session.commit()
             return {"message": "User location saved successfully"}, 200
@@ -87,3 +91,4 @@ class UserLocationResource(Resource):
         except Exception as e:
             logger.exception("Failed to save user location")
             return {"error": "Something went wrong", "details": str(e)}, 500
+

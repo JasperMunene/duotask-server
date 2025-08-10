@@ -22,10 +22,12 @@ def process_batch_recommendation(self):
             logger.info("No tasks in batch queue.")
             return
 
+        logger.info(f"Found {len(task_ids_raw)} task IDs in batch queue.")
+        logger.info(f"Raw task IDs: {task_ids_raw}")
         task_ids = []
         for tid in task_ids_raw:
             try:
-                task_ids.append(int(tid.decode()))
+                task_ids.append(int(tid))
             except Exception as e:
                 logger.warning(f"Could not decode task_id {tid}: {e}")
 
