@@ -2,6 +2,8 @@ services:
   - type: web
     name: my-flask-app
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip setuptools wheel
+      pip install --no-cache-dir -r requirements.txt
     startCommand: ./start.sh
     plan: free

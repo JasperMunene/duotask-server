@@ -83,7 +83,8 @@ psycopg2-binary
 pyasn1
 pyasn1_modules
 pycparser
-pydantic
+pydantic==2.11.6
+typing_extensions==4.12.2
 pydantic_core
 pyfcm
 Pygments
@@ -110,7 +111,6 @@ SQLAlchemy
 sqlalchemy-serializer
 tqdm
 typing-inspection
-typing_extensions
 tzdata
 uritemplate
 urllib3
