@@ -49,7 +49,7 @@ google-generativeai==0.1.0rc1
 googleapis-common-protos==1.69.2
 greenlet==3.1.1
 grpcio==1.70.0
-grpcio-status==1.70.0
+grpcio-status==1.59.5
 h11==0.14.0
 http-ece==1.2.1
 idna==3.10
@@ -74,6 +74,7 @@ pluggy==1.5.0
 prompt-toolkit==3.0.50
 propcache==0.2.0
 proto-plus==1.26.1
+protobuf==4.25.8
 psycopg2-binary==2.9.10
 py-vapid==1.9.2
 pyasn1==0.6.1
