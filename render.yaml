@@ -3,19 +3,5 @@ services:
     name: my-flask-app
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-class eventlet -w 1 app:app
-    plan: free
-
-  - type: worker
-    name: celery-worker
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.celery worker --loglevel=info
-    plan: free
-
-  - type: worker
-    name: celery-beat
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.celery beat --loglevel=info
+    startCommand: ./start.sh
     plan: free
