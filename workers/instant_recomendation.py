@@ -160,7 +160,7 @@ def query_gemini_for_best_fit(prompt, options):
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     logger.info("Sending request to Gemini for user recommendation...")
 
-    GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
     system_instruction = (
         "You are an assistant that selects the best users for a task based on relevance and proximity. "
         "Return a JSON object in this exact format: {\"user_ids\": [123, 456]} with the most suitable user IDs in order. "
@@ -179,7 +179,10 @@ def query_gemini_for_best_fit(prompt, options):
     }
 
     
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY   
+    }
 
     try:
         response = requests.post(GEMINI_URL, headers=headers, json=payload, timeout=20)

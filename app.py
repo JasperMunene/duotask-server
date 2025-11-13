@@ -9,9 +9,9 @@ import redis
 import os
 from models import db
 from extensions import bcrypt, socketio
+from flask_dance.contrib.google import make_google_blueprint
 from flask_jwt_extended import JWTManager
-from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleLogin, GoogleAuthorize, \
-    GoogleOAuth, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
+from resources.auth_resource import SignupResource, LogoutResource, VerifyOTPResource, LoginResource, GoogleAuthorize, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource, UserProfile
 from resources.task_recommendation_resource import TaskRecommendationResource
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
@@ -56,14 +56,15 @@ def create_app():
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY"),
         RESEND_API_KEY=os.getenv("RESEND_API_KEY"),
+        GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID"),
+        GOOGLE_CLIENT_SECRET=os.getenv("GOOGLE_CLIENT_SECRET"),
         SQLALCHEMY_DATABASE_URI=os.getenv("CONNECTION_STRING"),
         JWT_SECRET_KEY=os.getenv("JWT_SECRET_KEY", "your_jwt_secret_key"),
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=72),
-        JWT_TOKEN_LOCATION=["cookies"],
-        JWT_ACCESS_COOKIE_NAME="access_token",
-        JWT_COOKIE_SECURE=True,
-        JWT_COOKIE_SAMESITE="Lax",
-        JWT_COOKIE_CSRF_PROTECT=False,
+        # Changed: Use Authorization header instead of cookies
+        JWT_TOKEN_LOCATION=["headers"],
+        JWT_HEADER_NAME="Authorization",
+        JWT_HEADER_TYPE="Bearer",
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         FRONTEND_URL=os.getenv("FRONTEND_URL", "http://localhost:3000"),
 
@@ -135,8 +136,20 @@ def create_app():
     migrate = Migrate(app, db)
 
     # Initialize OAuth (Google in this case)
-    oauth = OAuth(app)
-    google_oauth = GoogleOAuth(oauth, app.config['FRONTEND_URL'])
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+     # ---- Google OAuth blueprint ----
+    google_bp = make_google_blueprint(
+        client_id=app.config['GOOGLE_CLIENT_ID'],
+        client_secret=app.config['GOOGLE_CLIENT_SECRET'],
+        scope=[
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+        ],
+        redirect_url="/auth/google",
+    )
+    app.register_blueprint(google_bp, url_prefix="/login")
 
     # Initialize API and route definitions
     api = Api(app)
@@ -159,12 +172,12 @@ def create_app():
     api.add_resource(SignupResource, '/auth/signup')
     api.add_resource(VerifyOTPResource, '/auth/verify-otp')
     api.add_resource(LoginResource, '/auth/login')
-    api.add_resource(GoogleLogin, '/auth/login/google', resource_class_args=[google_oauth])
-    api.add_resource(GoogleAuthorize, '/auth/authorize/google', endpoint='authorize_google', resource_class_args=[google_oauth])
+    api.add_resource(GoogleAuthorize, '/auth/google')
     api.add_resource(ResendOTPResource, '/auth/resend-otp')
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
     api.add_resource(ChangePasswordResource, '/auth/change-password')
+    api.add_resource(LogoutResource, '/auth/logout')
     
     # upload media resource 
     api.add_resource(ImageUploadResource, '/api/media/upload')
@@ -243,7 +256,7 @@ def create_app():
     api.add_resource(TestFloatLedger, '/api/test')
     return app
 
-# Run the app using     Flask-SocketIO if this file is run directly
+# Run the app using Flask-SocketIO if this file is run directly
 if __name__ == '__main__':
     app = create_app()
     socketio.run(

@@ -4,7 +4,7 @@ services:
   web:
     build: .
     container_name: web_service
-    command: gunicorn app:app --workers 1 --threads 2 --timeout 0 --worker-class gevent --bind 0.0.0.0:5000
+    command: gunicorn app:app --workers 1 --threads 2 --timeout 0 --worker-class eventlet --bind 0.0.0.0:5000
 
     ports:
       - "5000:5000"
@@ -15,7 +15,7 @@ services:
 
   celery_worker:
     build: .
-    container_name: celery_worker
+    container_name: duotasks_celery_worker
     command: celery -A app.celery worker --loglevel=info
     env_file:
       - .env
@@ -24,7 +24,7 @@ services:
 
   celery_beat:
     build: .
-    container_name: celery_beat
+    container_name: duotasks_celery_beat
     command: celery -A app.celery beat --loglevel=info
     env_file:
       - .env
@@ -33,6 +33,6 @@ services:
 
   redis:
     image: redis:7
-    container_name: redis
+    container_name: duotasks_redis_server
     ports:
       - "6379:6379"

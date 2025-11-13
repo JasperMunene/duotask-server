@@ -19,8 +19,8 @@ class ConversationResource(Resource):
         cache_key = f"conversations_user_{user_id}"
 
         cached_result = cache.get(cache_key)
-        if cached_result:
-            return cached_result
+        # if cached_result:
+            # return cached_result
 
         conversations = Conversation.query.filter(
             (Conversation.task_giver == user_id) | (Conversation.task_doer == user_id)

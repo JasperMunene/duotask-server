@@ -22,6 +22,7 @@ load_dotenv()
 # M-Pesa API credentials (loaded from .env file)
 MPESA_SHORTCODE = os.getenv("SAFARICOM_SANDBOX_SHORTCODE")
 MPESA_PASSKEY = os.getenv("SAFARICOM_SANDBOX_PASSKEY")
+API_BASE_URL = os.getenv("API_BASE_URL")
 
 # URL for Safaricom API
 MPESA_URL = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
@@ -42,7 +43,7 @@ class MpesaC2BResource(Resource):
         data = request.get_json()
         phone_number = data.get("phone_number")
         amount = data.get("amount")
-        call_back_url = f"https://bgrtfdl5-5000.uks1.devtunnels.ms/payment/mpesa/call_back/{user_id}"
+        call_back_url = f"{API_BASE_URL}/payment/mpesa/call_back/{user_id}"
         if not phone_number or not amount:
             return {"message": "Missing phone number or amount"}, 400
 

@@ -32,7 +32,9 @@ def process_user_connection(app, user_id, sid):
         cache = app.cache
         redis = app.redis
 
+        # Store BOTH mappings: user_id -> sid AND sid -> user_id
         cache.set(f"user_sid:{user_id}", sid, timeout=0)
+        cache.set(f"sid_user:{sid}", user_id, timeout=0)  # This is critical for disconnect
         redis.sadd("online_users", user_id)
         print(f"[+] User {user_id} SID saved. Online status set in Redis.")
 
@@ -74,46 +76,37 @@ def process_user_connection(app, user_id, sid):
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle user disconnections and notify relevant users efficiently."""
-    disconnected_user_id = None
-    user_id = request.args.get('user_id')
-    with current_app.app_context():  # Ensuring cache access inside app context
-        # Retrieve the online users from the cache
-        online_users = current_app.redis.smembers("online_users")
-        
-        if online_users is None:
-            online_users = []  # Initialize as an empty list if it's not found in cache
-        print(f"Current online users: {online_users}")
-
-        # Iterate over all online users
-        for user_id in online_users:
-            sid = current_app.cache.get(f"user_sid:{user_id}")
-            print(f"Checking user {user_id}, SID: {sid} against request SID: {request.sid}")
-            if sid == request.sid:
-                disconnected_user_id = user_id
-                # Remove the user's SID from the cache
-                current_app.cache.delete(f"user_sid:{user_id}")
-                # Remove the user ID from the online_users list in the cache
-                # online_users.remove(user_id)
-                current_app.redis.srem("online_users", user_id)  # Save the updated list back in the cache
-                print(f"Updated online users: {online_users}")
-                break
-
+    sid = request.sid
+    
+    # Get the disconnected user ID from the SID
+    disconnected_user_id = current_app.cache.get(f"sid_user:{sid}")
+    
     if not disconnected_user_id:
-        print("[⚠️] Could not find disconnected user in session list")
+        print(f"[⚠️] Could not find disconnected user for SID {sid}")
         return
 
-    print(f"[-] User {disconnected_user_id} disconnected with SID {request.sid}")
+    print(f"[-] User {disconnected_user_id} disconnected with SID {sid}")
 
+    # Clean up cache entries
+    current_app.cache.delete(f"user_sid:{disconnected_user_id}")
+    current_app.cache.delete(f"sid_user:{sid}")
+    
+    # Remove from Redis online users set
+    current_app.redis.srem("online_users", disconnected_user_id)
+    
+    # Update user status in database
     user = User.query.get(disconnected_user_id)
     if user:
         user.update_status("offline")
         print(f"[✓] User {disconnected_user_id} status set to offline")
 
+        # Find conversations involving this user
         conversations = Conversation.query.filter(
             (Conversation.task_giver == disconnected_user_id) | (Conversation.task_doer == disconnected_user_id)
         ).all()
-        print(f"Conversations found for user {disconnected_user_id}: {conversations}")
+        print(f"[ℹ️] Found {len(conversations)} conversations for user {disconnected_user_id}")
 
+        # Get other users in these conversations
         other_user_ids = {
             str(convo.task_doer) if str(convo.task_giver) == disconnected_user_id else str(convo.task_giver)
             for convo in conversations
@@ -123,22 +116,26 @@ def handle_disconnect():
             print(f"[ℹ️] User {disconnected_user_id} had no conversation participants")
             return
 
+        # Query for online users
         other_users = User.query.filter(User.id.in_(other_user_ids)).all()
         online_users = [u for u in other_users if u.status == "online"]
-        print(f"Online users to notify: {online_users}")
+        print(f"[ℹ️] Found {len(online_users)} online users to notify")
 
         if not online_users:
             print(f"[ℹ️] No online users to notify about user {disconnected_user_id}'s disconnection")
             return
 
+        # Notify each online user
         for u in online_users:
-            sid = current_app.cache.get(f"user_sid:{str(u.id)}")
-            if sid:
-                socketio.emit('user_disconnected', {'user_id': disconnected_user_id}, room=sid)
-                print(f"[📢] Notified user {u.id} (SID: {sid}) that user {disconnected_user_id} went offline")
+            other_sid = current_app.cache.get(f"user_sid:{str(u.id)}")
+            if other_sid:
+                socketio.emit('user_disconnected', {'user_id': disconnected_user_id}, room=other_sid)
+                print(f"[📢] Notified user {u.id} (SID: {other_sid}) that user {disconnected_user_id} went offline")
             else:
-                print(f"[🚫] User {u.id} is online in DB but not connected via socket")
-
+                print(f"[🚫] User {u.id} is online in DB but has no SID in cache")
+    else:
+        print(f"[⚠️] User {disconnected_user_id} not found in database")
+        
 @socketio.on('send_message')
 def handle_send_message(data):
     """Handle when a user sends a message."""

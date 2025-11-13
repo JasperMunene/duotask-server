@@ -27,8 +27,8 @@ from celery_app import celery
 
 def categorize_task_manually(task_title, task_description, category_names):
     api_key = os.getenv('GEMINI_API_KEY')
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    
     prompt = f"""
     You are a task categorization assistant for a gig marketplace.
 
@@ -69,7 +69,8 @@ def categorize_task_manually(task_title, task_description, category_names):
     }
 
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key   
     }
 
     response = requests.post(url, headers=headers, json=payload)
@@ -123,7 +124,7 @@ def categorize_task(self, task_id):
             logger.info(f"Successfully categorized task {task_id} as {category_name}")
         else:
             logger.info(f"Task {task_id} already has category {category_name}")
-
+            self.retry(exc=Exception("Category already assigned"))
         return category_name
 
     except Exception as e:

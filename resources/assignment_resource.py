@@ -146,7 +146,7 @@ class TaskAssignResource(Resource):
                 conversation=existing_convo,
                 sender_id=sender_id,
                 reciever_id=receiver_id,
-                message="Hello, let's start the conversation.",
+                message="Hello, how are you doing?",
                 date_time=db.func.now()
             )
             db.session.add(message)
@@ -160,7 +160,7 @@ class TaskAssignResource(Resource):
             conversation=conversation,
             sender_id=sender_id,
             reciever_id=receiver_id,
-            message="Hello, let's start the conversation.",
+            message="Hello, how are you doing?",
             date_time=db.func.now()
         )
         db.session.add(message)
