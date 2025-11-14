@@ -9,6 +9,7 @@ from utils.send_notification import Notify
 from models import db
 from models.user import User
 from extensions import bcrypt
+from workers.email_worker import send_verification_email, send_reset_email
 from authlib.integrations.flask_client import OAuth
 import resend
 from typing import Tuple, Dict
@@ -53,15 +54,11 @@ class SignupResource(Resource):
             db.session.add(new_user)
             db.session.commit()
 
-            # Send OTP email
-            otp_email_params = {
-                "from": "Grnder <onboarding@grnder.fueldash.net>",
-                "to": [args['email']],
-                "subject": "Verify Your Email Address",
-                "html": f"""<p>Your verification code is <strong>{new_user.otp_code}</strong>. 
-                          It expires in 10 minutes.</p>"""
-            }
-            resend.Emails.send(otp_email_params)
+            send_verification_email.delay(
+                name=new_user.name,
+                email=new_user.email,
+                token=new_user.otp_code
+            )
 
             return {
                 "message": "User created. Please verify your email.",
@@ -341,7 +338,7 @@ class ResendOTPResource(Resource):
             current_app.logger.error(f"Database error: {str(e)}")
             return {"message": "Failed to update OTP"}, 500
 
-        self._send_otp_email(user.email, new_otp)
+        self._send_otp_email(user.name, user.email, new_otp)
         return {"message": "OTP resent successfully"}, 200
 
     def _is_too_frequent(self, user: User) -> bool:
@@ -353,19 +350,15 @@ class ResendOTPResource(Resource):
             return elapsed < self.RESEND_COOLDOWN
         return False
 
-    def _send_otp_email(self, email: str, otp: str) -> None:
+    def _send_otp_email(self, name: str, email: str, otp: str) -> None:
         """Send OTP email using Resend service"""
         try:
-            resend.Emails.send({
-                "from": "Grnder <onboarding@grnder.fueldash.net>",
-                "to": [email],
-                "subject": "Your Verification Code",
-                "html": f"""
-                    <p>Your verification code is: <strong>{otp}</strong></p>
-                    <p>This code expires in 10 minutes.</p>
-                    <p>If you didn't request this, please ignore this email.</p>
-                """
-            })
+            with current_app.app_context():
+                send_verification_email.delay(
+                    name=name,
+                    email=email,
+                    token=otp
+                )
         except Exception as e:
             current_app.logger.error(f"Email send failed: {str(e)}")
 
@@ -402,47 +395,18 @@ class ForgotPasswordResource(Resource):
         if not user:
             return {"message": "If this email exists, we'll send a reset link"}, 200
 
+        new_otp = generate_otp()
         try:
-            reset_token = self._generate_reset_token()
-            user.reset_token = reset_token
-            user.reset_expires_at = datetime.datetime.utcnow() + self.TOKEN_EXPIRATION
+            user.reset_token = new_otp
+            user.reset_expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
             db.session.commit()
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Database error: {str(e)}")
-            return {"message": "Failed to generate reset token"}, 500
+            return {"message": "Failed to update OTP"}, 500
 
-        if not self._send_reset_email(user.email, reset_token):
-            return {"message": "Failed to send reset email"}, 500
-
-        return {"message": "Reset instructions sent to your email"}, 200
-
-    def _generate_reset_token(self) -> str:
-        """Generate a secure random token"""
-        return uuid.uuid4().hex + uuid.uuid4().hex
-
-    def _send_reset_email(self, email: str, token: str) -> bool:
-        """Send password reset email with frontend URL"""
-        frontend_url = current_app.config['FRONTEND_URL']
-        reset_url = f"{frontend_url}reset-password?token={token}"
-
-        try:
-            resend.Emails.send({
-                "from": "Grnder <onboarding@grnder.fueldash.net>",
-                "to": [email],
-                "subject": "Password Reset Request",
-                "html": f"""
-                    <p>We received a password reset request. Click the link below:</p>
-                    <a href="{reset_url}">{reset_url}</a>
-                    <p>This link expires in {self.TOKEN_EXPIRATION.seconds // 60} minutes.</p>
-                    <p>If you didn't request this, please ignore this email.</p>
-                """
-            })
-            return True
-        except Exception as e:
-            current_app.logger.error(f"Email send failed: {str(e)}")
-            return False
-
+        send_reset_email.delay(user.name, user.email, new_otp)
+        return {"message": "OTP resent successfully"}, 200
 
 class ResetPasswordResource(Resource):
     """Handle actual password reset with token validation"""
@@ -469,11 +433,13 @@ class ResetPasswordResource(Resource):
             description: User not found
         """
         parser = reqparse.RequestParser()
+        parser.add_argument('email', type=str, required=True,
+                            help="Email is required!")
         parser.add_argument('token', type=str, required=True)
         parser.add_argument('password', type=str, required=True)
         args = parser.parse_args()
 
-        user = User.query.filter_by(reset_token=args['token']).first()
+        user = User.query.filter_by(reset_token=args['token'], email=args['email']).first()
         if not user:
             return {"message": "Invalid reset token"}, 400
 
@@ -509,11 +475,11 @@ class ChangePasswordResource(Resource):
             user.password = bcrypt.generate_password_hash(args['new_password']).decode('utf-8')
             db.session.commit()
             notification = Notify(
-                    user_id=current_user_id,
-                    message="Password changed successfully",
-                    source='security',
-                    is_important=False
-                )
+                user_id=current_user_id,
+                message="Password changed successfully",
+                source='security',
+                is_important=False
+            )
             notification.post()
             return {"message": "Password changed successfully"}, 200
         except Exception as e:
