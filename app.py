@@ -11,7 +11,7 @@ from models import db
 from extensions import bcrypt, socketio
 from flask_dance.contrib.google import make_google_blueprint
 from flask_jwt_extended import JWTManager
-from resources.auth_resource import SignupResource, LogoutResource, VerifyOTPResource, LoginResource, GoogleAuthorize, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
+from resources.auth_resource import SignupResource, VerifyOTPResource, LoginResource, GoogleAuthorize, ResendOTPResource, ForgotPasswordResource, ResetPasswordResource, ChangePasswordResource
 from resources.user_resource import UserProfileResource, UserHealthResource, UserProfile
 from resources.task_recommendation_resource import TaskRecommendationResource
 from resources.task_resource import TaskResource, SingleTaskResource, TaskStatusResource
@@ -180,7 +180,7 @@ def create_app():
     api.add_resource(ForgotPasswordResource, '/auth/forgot-password')
     api.add_resource(ResetPasswordResource, '/auth/reset-password')
     api.add_resource(ChangePasswordResource, '/auth/change-password')
-    api.add_resource(LogoutResource, '/auth/logout')
+    # api.add_resource(LogoutResource, '/auth/logout')
     
     # upload media resource 
     api.add_resource(ImageUploadResource, '/api/media/upload')
