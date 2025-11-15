@@ -2,16 +2,15 @@ import os
 import random
 import datetime
 import uuid
-from flask import current_app, make_response, url_for, redirect, request
+from flask import current_app, make_response, url_for, redirect
 from flask_restful import Resource, reqparse
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required, JWTManager
 from utils.send_notification import Notify
 from models import db
 from models.user import User
 from extensions import bcrypt
+from workers.email_worker import send_verification_email, send_reset_email
 from authlib.integrations.flask_client import OAuth
-from flask_dance.contrib.google import google
-from urllib.parse import urlencode
 import resend
 from typing import Tuple, Dict
 
@@ -55,15 +54,11 @@ class SignupResource(Resource):
             db.session.add(new_user)
             db.session.commit()
 
-            # Send OTP email
-            otp_email_params = {
-                "from": "Duotasks <onboarding@mails.ryfty.net>",
-                "to": [args['email']],
-                "subject": "Verify Your Email Address",
-                "html": f"""<p>Your verification code is <strong>{new_user.otp_code}</strong>. 
-                          It expires in 10 minutes.</p>"""
-            }
-            resend.Emails.send(otp_email_params)
+            send_verification_email.delay(
+                name=new_user.name,
+                email=new_user.email,
+                token=new_user.otp_code
+            )
 
             return {
                 "message": "User created. Please verify your email.",
@@ -105,17 +100,24 @@ class VerifyOTPResource(Resource):
             db.session.commit()
 
             access_token = create_access_token(identity=str(user.id))
-            
-            return {
+            response = make_response({
                 "message": "Email verified successfully",
-                "access_token": access_token,
                 "user": {
                     "id": user.id,
                     "name": user.name,
-                    "email": user.email,
-                    "image": user.image
+                    "email": user.email
                 }
-            }, 200
+            }, 200)
+
+            response.set_cookie(
+                key='access_token',
+                value=access_token,
+                httponly=True,
+                secure=True,
+                samesite='Lax',
+                max_age=86400
+            )
+            return response
 
         except Exception as e:
             db.session.rollback()
@@ -144,36 +146,94 @@ class LoginResource(Resource):
         if not user.is_verified:
             return {"message": "Account not verified"}, 403
 
+        if args['rememberMe']:
+            cookie_max_age = 30 * 24 * 60 * 60
+        else:
+            cookie_max_age = 24 * 60 * 60
+
         try:
             access_token = create_access_token(identity=str(user.id))
-            return {
+            response = make_response({
                 "message": "Login successful",
-                "access_token": access_token,
                 "user": {
                     "id": user.id,
                     "name": user.name,
                     "email": user.email,
-                    "image": user.image
-                }
-            }, 200
+                    "image": user.image,
+                    "access_token": access_token
+                },
+                "access_token": access_token
+            }, 200)
+
+            response.set_cookie(
+                key="access_token",
+                value=access_token,
+                httponly=True,
+                secure=True,
+                samesite="Lax",
+                max_age=cookie_max_age,
+            )
+            return response
 
         except Exception as e:
             current_app.logger.error(f"Login error: {str(e)}")
             return {"message": "Login failed"}, 500
 
-class GoogleAuthorize(Resource):
+# Google Oauth Resource
+class GoogleOAuth:
+    def __init__(self, oauth: OAuth, frontend_url: str):
+        self.oauth = oauth
+        self.frontend_url = frontend_url
+        self.google = self._register_google()  # Store the Google client here
+
+    def _register_google(self):
+        """Register and return the Google OAuth client"""
+        return self.oauth.register(
+            name='google',
+            client_id=os.getenv('GOOGLE_CLIENT_ID'),  # Ensure correct env var name
+            client_secret=os.getenv('GOOGLE_CLIENT_SECRET'),
+            server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+            client_kwargs={'scope': 'openid profile email'}
+        )
+
+class GoogleLogin(Resource):
+    def __init__(self, oauth: GoogleOAuth):
+        self.oauth = oauth
+
     def get(self):
+        """Initiate Google OAuth flow"""
+        try:
+            redirect_uri = url_for('authorize_google', _external=True)
+            return self.oauth.google.authorize_redirect(redirect_uri)
+        except Exception as e:
+            current_app.logger.error(f"Google login initiation failed: {str(e)}")
+            return {"message": "Google login unavailable"}, 503
+
+class GoogleAuthorize(Resource):
+    def __init__(self, oauth: GoogleOAuth):
+        self.oauth = oauth
+        self.frontend_url = oauth.frontend_url
+
+    def get(self) -> redirect:
         """Handle Google OAuth callback"""
-        if not google.authorized:
-            return redirect(url_for("google.login"))
+        try:
+            token = self.oauth.google.authorize_access_token()
+        except Exception as e:
+            current_app.logger.error(f"Error authorizing Google access token: {str(e)}")
+            return self._redirect_with_error("Failed to authorize access token")
+
+        # Corrected key to 'userinfo_endpoint' (was missing 'o')
+        userinfo_endpoint = self.oauth.google.server_metadata.get('userinfo_endpoint')
+        if not userinfo_endpoint:
+            current_app.logger.error("Userinfo endpoint not available in server metadata")
+            return self._redirect_with_error("Server configuration error")
 
         try:
-            # Step 1: Fetch user info using the token
-            resp = google.get('/oauth2/v2/userinfo')
-            resp.raise_for_status()
-            user_info = resp.json()
+            res = self.oauth.google.get(userinfo_endpoint)
+            res.raise_for_status()
+            user_info = res.json()
         except Exception as e:
-            current_app.logger.error(f"Fetching user info failed: {str(e)}")
+            current_app.logger.error(f"Error fetching user info: {str(e)}")
             return self._redirect_with_error("Failed to fetch user information")
 
         if 'email' not in user_info:
@@ -186,34 +246,7 @@ class GoogleAuthorize(Resource):
             current_app.logger.error(f"Error creating user: {str(e)}")
             return self._redirect_with_error("Account creation failed")
 
-        # Step 2: Create JWT token
-        access_token = create_access_token(identity=str(user.id))
-
-        # Always use deep link with token in URL for both mobile and web
-        params = {
-            'token': access_token,
-            'email': user.email,
-            'id': user.id,
-            'name': user.name,
-            'profile': user.image or ''
-        }
-        
-        # Check if this is a mobile request
-        user_agent = request.headers.get('User-Agent', '').lower()
-        is_mobile = 'mobile' in user_agent or request.args.get('platform') == 'mobile'
-        
-        if is_mobile:
-            redirect_url = f"duotasks://auth/deep_callback?{urlencode(params)}"
-        else:
-            # Web clients can handle the token from URL parameters
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
-            redirect_url = f"{frontend_url}/auth/callback?{urlencode(params)}"
-        
-        return redirect(redirect_url)
-
-    def _redirect_with_error(self, message: str):
-        error_url = f"duotasks://auth/deep_callback?error={message}"
-        return redirect(error_url)
+        return self._create_authorized_response(user)
 
     def _get_or_create_user(self, user_info: dict) -> User:
         """Get or create user from Google profile"""
@@ -226,13 +259,31 @@ class GoogleAuthorize(Resource):
                 email=email,
                 image=user_info.get('picture'),
                 auth_provider='google',
-                is_verified=True,
-                password=None  # Google users don't have passwords
+                is_verified=True
             )
             db.session.add(user)
             db.session.commit()
 
         return user
+
+    def _create_authorized_response(self, user: User) -> redirect:
+        """Create final authorized response with JWT"""
+        access_token = create_access_token(identity=str(user.id))
+        response = redirect(f"{self.frontend_url}/onboarding")
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+            max_age=86400
+        )
+        return response
+
+    def _redirect_with_error(self, message: str) -> redirect:
+        """Redirect to frontend with error message"""
+        error_url = f"{self.frontend_url}/login?error={message}"
+        return redirect(error_url)
 
 # Resend OTP Resource
 class ResendOTPResource(Resource):
@@ -287,7 +338,7 @@ class ResendOTPResource(Resource):
             current_app.logger.error(f"Database error: {str(e)}")
             return {"message": "Failed to update OTP"}, 500
 
-        self._send_otp_email(user.email, new_otp)
+        self._send_otp_email(user.name, user.email, new_otp)
         return {"message": "OTP resent successfully"}, 200
 
     def _is_too_frequent(self, user: User) -> bool:
@@ -299,19 +350,15 @@ class ResendOTPResource(Resource):
             return elapsed < self.RESEND_COOLDOWN
         return False
 
-    def _send_otp_email(self, email: str, otp: str) -> None:
+    def _send_otp_email(self, name: str, email: str, otp: str) -> None:
         """Send OTP email using Resend service"""
         try:
-            resend.Emails.send({
-                "from": "Duotasks <onboarding@mails.ryfty.net>",
-                "to": [email],
-                "subject": "Your Verification Code",
-                "html": f"""
-                    <p>Your verification code is: <strong>{otp}</strong></p>
-                    <p>This code expires in 10 minutes.</p>
-                    <p>If you didn't request this, please ignore this email.</p>
-                """
-            })
+            with current_app.app_context():
+                send_verification_email.delay(
+                    name=name,
+                    email=email,
+                    token=otp
+                )
         except Exception as e:
             current_app.logger.error(f"Email send failed: {str(e)}")
 
@@ -348,47 +395,18 @@ class ForgotPasswordResource(Resource):
         if not user:
             return {"message": "If this email exists, we'll send a reset link"}, 200
 
+        new_otp = generate_otp()
         try:
-            reset_token = self._generate_reset_token()
-            user.reset_token = reset_token
-            user.reset_expires_at = datetime.datetime.utcnow() + self.TOKEN_EXPIRATION
+            user.reset_token = new_otp
+            user.reset_expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
             db.session.commit()
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Database error: {str(e)}")
-            return {"message": "Failed to generate reset token"}, 500
+            return {"message": "Failed to update OTP"}, 500
 
-        if not self._send_reset_email(user.email, reset_token):
-            return {"message": "Failed to send reset email"}, 500
-
-        return {"message": "Reset instructions sent to your email"}, 200
-
-    def _generate_reset_token(self) -> str:
-        """Generate a secure random token"""
-        return uuid.uuid4().hex + uuid.uuid4().hex
-
-    def _send_reset_email(self, email: str, token: str) -> bool:
-        """Send password reset email with frontend URL"""
-        frontend_url = current_app.config['FRONTEND_URL']
-        reset_url = f"{frontend_url}reset-password?token={token}"
-
-        try:
-            resend.Emails.send({
-                "from": "Duotasks <onboarding@mails.ryfty.net>",
-                "to": [email],
-                "subject": "Password Reset Request",
-                "html": f"""
-                    <p>We received a password reset request. Click the link below:</p>
-                    <a href="{reset_url}">{reset_url}</a>
-                    <p>This link expires in {self.TOKEN_EXPIRATION.seconds // 60} minutes.</p>
-                    <p>If you didn't request this, please ignore this email.</p>
-                """
-            })
-            return True
-        except Exception as e:
-            current_app.logger.error(f"Email send failed: {str(e)}")
-            return False
-
+        send_reset_email.delay(user.name, user.email, new_otp)
+        return {"message": "OTP resent successfully"}, 200
 
 class ResetPasswordResource(Resource):
     """Handle actual password reset with token validation"""
@@ -415,11 +433,13 @@ class ResetPasswordResource(Resource):
             description: User not found
         """
         parser = reqparse.RequestParser()
+        parser.add_argument('email', type=str, required=True,
+                            help="Email is required!")
         parser.add_argument('token', type=str, required=True)
         parser.add_argument('password', type=str, required=True)
         args = parser.parse_args()
 
-        user = User.query.filter_by(reset_token=args['token']).first()
+        user = User.query.filter_by(reset_token=args['token'], email=args['email']).first()
         if not user:
             return {"message": "Invalid reset token"}, 400
 
@@ -455,38 +475,14 @@ class ChangePasswordResource(Resource):
             user.password = bcrypt.generate_password_hash(args['new_password']).decode('utf-8')
             db.session.commit()
             notification = Notify(
-                    user_id=current_user_id,
-                    message="Password changed successfully",
-                    source='security',
-                    is_important=False
-                )
+                user_id=current_user_id,
+                message="Password changed successfully",
+                source='security',
+                is_important=False
+            )
             notification.post()
             return {"message": "Password changed successfully"}, 200
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Change password error: {str(e)}")
             return {"message": "Failed to change password"}, 500
-
-class LogoutResource(Resource):
-    """Handle logout and clear any existing cookies"""
-    
-    def post(self):
-        """
-        Logout user and clear authentication cookie
-        This endpoint clears any existing cookies from the previous cookie-based auth system
-        """
-        response = make_response({
-            "message": "Logged out successfully"
-        }, 200)
-        
-        # Clear the access_token cookie by setting it to expire immediately
-        response.set_cookie(
-            key='access_token',
-            value='',
-            httponly=True,
-            secure=True,
-            samesite='Lax',
-            max_age=0  # Expire immediately
-        )
-        
-        return response

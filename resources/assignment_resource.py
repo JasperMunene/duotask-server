@@ -14,6 +14,7 @@ from utils.exceptions import InsufficientBalanceError
 from utils.ledgers.internal import InternalTransfer
 from utils.send_notification import Notify
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,27 @@ class TaskAssignResource(Resource):
             self._invalidate_caches(task_id, ids)
             self._notify_parties(task, bid, rejected_user_ids)
             self._notify_new_convo_convos(ids)
+            self._send_authorisation_email(
+                user_id=task.user_id,
+                task_name=task.title,
+                task_id=task.id,
+                amount=bid.amount,
+                worker_name=bid.user.name,
+                worker_phone=bid.user.phone,
+                worker_profile_image=bid.user.image
+            )
+            self._send_assignment_email(
+                worker_name=bid.user.name,
+                worker_email=bid.user.email,
+                amount=bid.amount,
+                task_name=task.title,
+                task_id=task.id,
+                task_description=task.description,
+                client_name=task.user.name,
+                client_phone=task.user.phone,
+                client_profile_image=task.user.image,
+                timestamp=datetime.now().strftime("%b %d, %Y at %I:%M %p")
+            )
 
             return {
                 'message': 'Task assigned successfully',
@@ -198,3 +220,36 @@ class TaskAssignResource(Resource):
                     bid_rejected.delay(task.id, list(set(rejected_user_ids)), task.user_id)
         except Exception as e:
             logger.error(f"Notification system error: {e}")
+
+    def _send_authorisation_email(self, user_id, task_name, task_id, amount, worker_name, worker_phone=None, worker_profile_image=None):
+        try:
+            from workers.email_worker import send_payment_authorization_email
+            send_payment_authorization_email.delay(
+                user_id,
+                task_name,
+                task_id,
+                amount,
+                worker_name,
+                worker_phone,
+                worker_profile_image
+            )
+        except Exception as e:
+            logger.error(f"Failed to queue authorization email: {e}")
+
+    def _send_assignment_email(self, worker_name, worker_email, amount, task_name, task_id, task_description, client_name, client_phone, client_profile_image, timestamp):
+        try:
+            from workers.email_worker import send_task_assignment_email
+            send_task_assignment_email.delay(
+                worker_name,
+                worker_email,
+                amount,
+                task_name,
+                task_id,
+                task_description,
+                client_name,
+                client_phone,
+                client_profile_image,
+                timestamp
+            )
+        except Exception as e:
+            logger.error(f"Failed to queue task assignment email: {e}")

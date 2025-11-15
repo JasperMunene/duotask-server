@@ -16,6 +16,7 @@ from utils.send_notification import Notify
 from utils.ledgers.platform import FloatLedger
 from models.user import User
 from models.wallet_transactions import WalletTransaction
+from workers.email_worker import send_wallet_top_up_mail
 # Load environment variables from .env file
 load_dotenv()
 
@@ -33,7 +34,7 @@ MPESA_CONSUMER_KEY = os.getenv("SAFARICOM_SANDBOX_CONSUMER_KEY")
 MPESA_CONSUMER_SECRET = os.getenv("SAFARICOM_SANDBOX_CONSUMER_SECRET")
 
 # The URL M-Pesa will call with the payment status
-# CALLBACK_URL = os.getenv("CALLBACK_URL")
+API_BASE_URL = os.getenv("API_BASE_URL")
 
 class MpesaC2BResource(Resource):
     @jwt_required()
@@ -188,7 +189,13 @@ class MpesaCallbackResource(Resource):
 
                 Notify(user_id=user_id, message=f"Wallet top-up of KES {amount} was successful. REF: {transaction_id}", source="wallet", sender_id=user_id).post()
 
+
                 cache.delete(f"user_wallet_{user_id}")
+                send_wallet_top_up_mail.delay(
+                    user_id = user_id,
+                    amount = amount,
+                    transaction_id = transaction_id
+                )
                 return {
                     "message": "Transaction successful",
                     "transaction_id": transaction_id,
@@ -209,7 +216,7 @@ class MpesaCallbackResource(Resource):
                     "message": "Transaction failed",
                     "reason": result_desc,
                     "code": result_code
-                }, 400
+                }, 200
 
         except Exception as e:
             db.session.rollback()

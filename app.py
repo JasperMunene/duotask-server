@@ -38,6 +38,9 @@ from resources.paystack_call_back import Paystack_callback
 from resources.user_location_respource import UserLocationResource
 from resources.review_resource import ReviewListResource, ReviewResource
 from resources.upload_media_resource import ImageUploadResource
+
+
+from test_resource.emails import TestWalletAuthorizationEmail, TestWalletTopupEmail
 from datetime import timedelta
 from authlib.integrations.flask_client import OAuth
 import threading
@@ -252,8 +255,12 @@ def create_app():
     
     # User location resource
     api.add_resource(UserLocationResource, '/user/location', '/user/location/<int:user_id>')
+
+
     # testing resources
     api.add_resource(TestFloatLedger, '/api/test')
+    api.add_resource(TestWalletAuthorizationEmail, '/test/email/wallet-authorization')
+    api.add_resource(TestWalletTopupEmail, '/test/email/wallet-topup')
     return app
 
 # Run the app using Flask-SocketIO if this file is run directly

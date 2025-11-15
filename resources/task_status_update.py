@@ -11,6 +11,7 @@ from werkzeug.exceptions import HTTPException
 from utils.send_notification import Notify
 from models.conversation import Conversation
 from utils.ledgers.internal import InternalTransfer
+from datetime import datetime
 logger = logging.getLogger(__name__)
 
         
@@ -31,6 +32,7 @@ class StatusUpdate(Resource):
         user_id = get_jwt_identity()
         args = self.parser.parse_args()
         new_status = args['status']
+        print("New status:", new_status)
 
         release_funds_needed = False
         notify_payload = {}
@@ -56,7 +58,7 @@ class StatusUpdate(Resource):
                     abort(403, message="Only the assigned task doer can perform this action")
                 if new_status == 'completed' and not is_owner:
                     abort(403, message="Only the task owner can mark as completed")
-
+                
                 # Apply status updates
                 if new_status == "on_the_way":
                     assignment.status = new_status
@@ -66,6 +68,7 @@ class StatusUpdate(Resource):
                 elif new_status == "done":
                     task.status = new_status
                     assignment.status = new_status
+                    self._send_completion_email(task, assignment)
                 elif new_status == "completed":
                     assignment.status = new_status
                     task.status = new_status
@@ -100,6 +103,7 @@ class StatusUpdate(Resource):
                     amount=assignment.agreed_price
                 )
                 transfer.release_funds()
+                self._send_settlement_email(task, assignment)
                 cache.delete(f"user_wallet_{assignment.doer.id}")
 
             self._notify_based_on_status(**notify_payload)
@@ -172,3 +176,38 @@ class StatusUpdate(Resource):
             User.query.filter_by(id=task.user_id).update(
                 {User.cancelled_tasks_count: User.cancelled_tasks_count + 1}
             )
+    
+    def _send_completion_email(self, task, assignment):
+        from workers.email_worker import send_task_completion_email
+        completion_timestamp = datetime.now().strftime("%b %d, %Y at %I:%M %p")
+        review_link = f"https://duotasks.com/tasks/{task.id}/review"
+
+        send_task_completion_email.delay(
+            client_name=task.user.name,
+            worker_name=assignment.doer.name,
+            amount=assignment.agreed_price,
+            task_name=task.title,
+            task_id=task.id,
+            task_description=task.description,
+            worker_phone=assignment.doer.phone,
+            worker_profile_image=assignment.doer.image,
+            completion_timestamp=completion_timestamp,
+            review_link=review_link
+        )
+
+    def _send_settlement_email(self, task, assignment):
+        from workers.email_worker import task_settlement_email
+        completion_timestamp = datetime.now().strftime("%b %d, %Y at %I:%M %p")
+        settlement_timestamp = datetime.now().strftime("%b %d, %Y at %I:%M %p")
+
+        task_settlement_email.delay(
+            worker_email=assignment.doer.email,
+            worker_name=assignment.doer.name,
+            agreed_amount=assignment.agreed_price,
+            task_name=task.title,
+            task_id=task.id,
+            client_name=task.user.name,
+            client_profile_image=task.user.image,
+            completion_timestamp=completion_timestamp,
+            settlement_timestamp=settlement_timestamp
+        )
